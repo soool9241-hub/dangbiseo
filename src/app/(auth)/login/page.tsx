@@ -112,20 +112,12 @@ export default function LoginPage() {
         </CardContent>
       </Card>
 
-      <div className="flex flex-col items-center gap-2 text-sm">
-        <Link
-          href="/signup"
-          className="font-medium text-teal-600 hover:underline"
-        >
-          회원가입
-        </Link>
-        <Link
-          href="/dashboard"
-          className="text-muted-foreground hover:underline"
-        >
-          둘러보기
-        </Link>
-      </div>
+      <Link
+        href="/signup"
+        className="text-sm font-medium text-teal-600 hover:underline"
+      >
+        회원가입
+      </Link>
     </div>
   );
 }
