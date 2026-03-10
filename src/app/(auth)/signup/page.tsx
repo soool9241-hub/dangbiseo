@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { User, Mail, Lock } from "lucide-react";
+import { User, Mail, Lock, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +17,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/client";
 
 const signupSchema = z
   .object({
@@ -33,6 +35,10 @@ type SignupForm = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -41,8 +47,44 @@ export default function SignupPage() {
     resolver: zodResolver(signupSchema),
   });
 
-  function onSubmit(_data: SignupForm) {
+  async function onSubmit(data: SignupForm) {
+    setLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    const supabase = createClient();
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: {
+        data: {
+          display_name: data.name,
+        },
+      },
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    // If email confirmation is required (user exists but identities is empty)
+    if (authData.user && authData.user.identities?.length === 0) {
+      setError("이미 등록된 이메일입니다");
+      setLoading(false);
+      return;
+    }
+
+    // If email confirmation is needed (session is null)
+    if (!authData.session) {
+      setSuccessMessage("확인 이메일을 전송했습니다. 이메일을 확인해주세요.");
+      setLoading(false);
+      return;
+    }
+
     router.push("/onboarding");
+    router.refresh();
   }
 
   return (
@@ -64,6 +106,18 @@ export default function SignupPage() {
             onSubmit={handleSubmit(onSubmit)}
             className="flex flex-col gap-4"
           >
+            {error && (
+              <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-700 dark:bg-teal-950 dark:text-teal-300">
+                {successMessage}
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="name">이름</Label>
               <div className="relative">
@@ -72,6 +126,7 @@ export default function SignupPage() {
                   id="name"
                   placeholder="홍길동"
                   className="pl-9"
+                  disabled={loading}
                   {...register("name")}
                 />
               </div>
@@ -91,6 +146,7 @@ export default function SignupPage() {
                   type="email"
                   placeholder="email@example.com"
                   className="pl-9"
+                  disabled={loading}
                   {...register("email")}
                 />
               </div>
@@ -110,6 +166,7 @@ export default function SignupPage() {
                   type="password"
                   placeholder="6자 이상 입력하세요"
                   className="pl-9"
+                  disabled={loading}
                   {...register("password")}
                 />
               </div>
@@ -129,6 +186,7 @@ export default function SignupPage() {
                   type="password"
                   placeholder="비밀번호를 다시 입력하세요"
                   className="pl-9"
+                  disabled={loading}
                   {...register("passwordConfirm")}
                 />
               </div>
@@ -142,8 +200,16 @@ export default function SignupPage() {
             <Button
               type="submit"
               className="mt-2 h-10 w-full bg-teal-600 text-white hover:bg-teal-700"
+              disabled={loading}
             >
-              회원가입
+              {loading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  가입 중...
+                </>
+              ) : (
+                "회원가입"
+              )}
             </Button>
           </form>
         </CardContent>

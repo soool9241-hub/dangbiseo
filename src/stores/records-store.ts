@@ -89,6 +89,7 @@ interface RecordsState {
   addMoodRecord: (record: Omit<MoodRecord, 'id' | 'user_id'>) => void;
   addHbA1cRecord: (record: Omit<HbA1cRecord, 'id' | 'user_id'>) => void;
   deleteRecord: (type: string, id: string) => void;
+  resetStore: () => void;
 }
 
 export const useRecordsStore = create<RecordsState>()(
@@ -141,6 +142,16 @@ export const useRecordsStore = create<RecordsState>()(
           case 'hba1c': return { hba1cRecords: state.hba1cRecords.filter(r => r.id !== id) };
           default: return {};
         }
+      }),
+
+      resetStore: () => set({
+        profile: defaultProfile,
+        glucoseRecords: [],
+        insulinRecords: [],
+        mealRecords: [],
+        exerciseRecords: [],
+        moodRecords: [],
+        hba1cRecords: [],
       }),
     }),
     { name: 'dangbiseo-records' }

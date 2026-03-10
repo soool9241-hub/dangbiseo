@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   User, Target, Syringe, Smartphone, Phone, Settings2, Info,
-  Plus, X, Sun, Moon,
+  Plus, X, Sun, Moon, LogOut, Loader2,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,11 +42,21 @@ const insulinTypeLabels: Record<InsulinType, string> = {
 };
 
 export default function SettingsPage() {
-  const { profile, setProfile } = useRecordsStore();
+  const router = useRouter();
+  const { profile, setProfile, resetStore } = useRecordsStore();
+  const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
 
   const [newInsulinName, setNewInsulinName] = useState("");
   const [newInsulinType, setNewInsulinType] = useState<InsulinType>("rapid");
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await signOut();
+    resetStore();
+    router.push("/login");
+  };
 
   const addInsulin = () => {
     if (!newInsulinName.trim()) return;
@@ -76,6 +88,12 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {user?.email && (
+            <div className="space-y-1.5">
+              <Label>이메일</Label>
+              <p className="text-sm text-muted-foreground">{user.email}</p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="display-name">이름</Label>
             <Input
@@ -320,6 +338,26 @@ export default function SettingsPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Logout */}
+      <Button
+        variant="outline"
+        className="w-full h-11 text-destructive border-destructive/30 hover:bg-destructive/10"
+        onClick={handleLogout}
+        disabled={loggingOut}
+      >
+        {loggingOut ? (
+          <>
+            <Loader2 className="size-4 animate-spin" />
+            로그아웃 중...
+          </>
+        ) : (
+          <>
+            <LogOut className="size-4" />
+            로그아웃
+          </>
+        )}
+      </Button>
     </div>
   );
 }

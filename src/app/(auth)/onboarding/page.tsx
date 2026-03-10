@@ -11,7 +11,9 @@ import {
   Target,
   Phone,
   Info,
+  Loader2,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,6 +77,9 @@ export default function OnboardingPage() {
   const [emergencyName, setEmergencyName] = useState("");
   const [emergencyPhone, setEmergencyPhone] = useState("");
 
+  // Loading state
+  const [saving, setSaving] = useState(false);
+
   function toggleInsulin(insulin: { name: string; type: InsulinType }) {
     setSelectedInsulins((prev) => {
       const exists = prev.find((i) => i.name === insulin.name);
@@ -110,7 +115,10 @@ export default function OnboardingPage() {
     if (step > 1) setStep(step - 1);
   }
 
-  function handleComplete() {
+  async function handleComplete() {
+    setSaving(true);
+
+    // Save to Zustand store (local caching)
     setProfile({
       diabetes_type: diabetesType!,
       diagnosis_date: diagnosisDate || null,
@@ -126,6 +134,32 @@ export default function OnboardingPage() {
       emergency_contact_phone: emergencyPhone || null,
       onboarding_completed: true,
     });
+
+    // Save to Supabase if user is logged in
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('profiles').update({
+          diabetes_type: diabetesType,
+          diagnosis_date: diagnosisDate || null,
+          preferred_insulins: selectedInsulins,
+          pump_user: pumpUser,
+          cgm_user: cgmUser,
+          cgm_model: cgmUser ? cgmModel : null,
+          target_glucose_min: targetMin,
+          target_glucose_max: targetMax,
+          target_hba1c: targetHba1c,
+          emergency_contact_name: emergencyName || null,
+          emergency_contact_phone: emergencyPhone || null,
+          onboarding_completed: true,
+        }).eq('id', user.id);
+      }
+    } catch {
+      // Continue even if Supabase save fails - local data is saved
+    }
+
+    setSaving(false);
     router.push("/dashboard");
   }
 
@@ -199,13 +233,20 @@ export default function OnboardingPage() {
         <Button
           className="h-11 flex-1 bg-teal-600 text-white hover:bg-teal-700"
           onClick={handleNext}
-          disabled={!canProceed()}
+          disabled={!canProceed() || saving}
         >
           {step === TOTAL_STEPS ? (
-            <>
-              시작하기
-              <Check className="size-4" />
-            </>
+            saving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                저장 중...
+              </>
+            ) : (
+              <>
+                시작하기
+                <Check className="size-4" />
+              </>
+            )
           ) : (
             <>
               다음
