@@ -146,6 +146,18 @@ export function useSupabaseSync() {
     }
   }, [user, store, supabase]);
 
+  const updateProfile = useCallback(async (updates: Parameters<typeof store.setProfile>[0]) => {
+    store.setProfile(updates);
+    if (user) {
+      const { preferred_insulins, ...rest } = { ...store.profile, ...updates };
+      await supabase.from('profiles').upsert({
+        ...rest,
+        id: user.id,
+        preferred_insulins: preferred_insulins || [],
+      });
+    }
+  }, [user, store, supabase]);
+
   const deleteRecord = useCallback(async (type: string, id: string) => {
     store.deleteRecord(type, id);
     if (user) {
@@ -171,6 +183,7 @@ export function useSupabaseSync() {
     addExerciseRecord,
     addMoodRecord,
     addHbA1cRecord,
+    updateProfile,
     deleteRecord,
     isAuthenticated: !!user,
   };

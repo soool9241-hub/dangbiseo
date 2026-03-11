@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { NumberStepper } from "@/components/shared/NumberStepper";
 import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type { DiabetesType, GlucoseUnit, InsulinType } from "@/types/database";
 
 const diabetesTypeLabels: Record<DiabetesType, string> = {
@@ -43,7 +44,8 @@ const insulinTypeLabels: Record<InsulinType, string> = {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { profile, setProfile, resetStore } = useRecordsStore();
+  const { profile, resetStore } = useRecordsStore();
+  const { updateProfile: setProfile } = useSync();
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
 

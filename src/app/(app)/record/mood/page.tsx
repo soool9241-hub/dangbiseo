@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type { MoodLevel } from "@/types/database";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +32,7 @@ const factorTags = [
 
 export default function MoodRecordPage() {
   const router = useRouter();
-  const addMoodRecord = useRecordsStore((s) => s.addMoodRecord);
+  const { addMoodRecord } = useSync();
 
   const [mood, setMood] = useState<MoodLevel | null>(null);
   const [stressLevel, setStressLevel] = useState(3);

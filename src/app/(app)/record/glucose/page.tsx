@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { GlucoseRangeBadge } from "@/components/shared/GlucoseRangeBadge";
-import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type { GlucoseTiming, GlucoseSource } from "@/types/database";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +27,7 @@ const sourceOptions: { value: GlucoseSource; label: string }[] = [
 
 export default function GlucoseRecordPage() {
   const router = useRouter();
-  const addGlucoseRecord = useRecordsStore((s) => s.addGlucoseRecord);
+  const { addGlucoseRecord } = useSync();
 
   const [display, setDisplay] = useState("");
   const [timing, setTiming] = useState<GlucoseTiming>("fasting");

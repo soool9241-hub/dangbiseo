@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberStepper } from "@/components/shared/NumberStepper";
 import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type { InsulinType, InjectionSite } from "@/types/database";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ const injectionSites: { value: InjectionSite; label: string; emoji: string }[] =
 
 export default function InsulinRecordPage() {
   const router = useRouter();
-  const addInsulinRecord = useRecordsStore((s) => s.addInsulinRecord);
+  const { addInsulinRecord } = useSync();
   const preferredInsulins = useRecordsStore((s) => s.profile.preferred_insulins);
 
   const [selectedInsulin, setSelectedInsulin] = useState(

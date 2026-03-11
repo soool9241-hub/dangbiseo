@@ -14,9 +14,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { NumberStepper } from "@/components/shared/NumberStepper";
 import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 
 export default function HbA1cPage() {
-  const { hba1cRecords, addHbA1cRecord, profile } = useRecordsStore();
+  const { hba1cRecords, profile } = useRecordsStore();
+  const { addHbA1cRecord } = useSync();
   const [showForm, setShowForm] = useState(false);
   const [formValue, setFormValue] = useState(7.0);
   const [formDate, setFormDate] = useState(format(new Date(), "yyyy-MM-dd"));

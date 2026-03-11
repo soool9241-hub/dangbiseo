@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import { foodDatabase } from "@/data/foods";
 import type { MealType, MealFoodItem } from "@/types/database";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ const carbPresets = [
 
 export default function MealRecordPage() {
   const router = useRouter();
-  const addMealRecord = useRecordsStore((s) => s.addMealRecord);
+  const { addMealRecord } = useSync();
 
   const [mealType, setMealType] = useState<MealType>("lunch");
   const [mode, setMode] = useState<"quick" | "detail">("quick");

@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NumberStepper } from "@/components/shared/NumberStepper";
-import { useRecordsStore } from "@/stores/records-store";
+import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type {
   ExerciseType,
   ExerciseIntensity,
@@ -70,7 +70,7 @@ function getGuideText(
 
 export default function ExerciseRecordPage() {
   const router = useRouter();
-  const addExerciseRecord = useRecordsStore((s) => s.addExerciseRecord);
+  const { addExerciseRecord } = useSync();
 
   const [exerciseType, setExerciseType] = useState<ExerciseType>("유산소");
   const [duration, setDuration] = useState(30);
