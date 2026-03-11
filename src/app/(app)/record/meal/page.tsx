@@ -116,7 +116,6 @@ export default function MealRecordPage() {
       total_calories: null,
       photo_url: null,
       note: note.trim() || null,
-      items,
     });
     toast.success("식단이 기록되었습니다");
     router.back();
