@@ -53,6 +53,7 @@ export default function SignupPage() {
     setSuccessMessage(null);
 
     const supabase = createClient();
+    const siteUrl = window.location.origin;
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
@@ -60,6 +61,7 @@ export default function SignupPage() {
         data: {
           display_name: data.name,
         },
+        emailRedirectTo: `${siteUrl}/auth/callback`,
       },
     });
 
