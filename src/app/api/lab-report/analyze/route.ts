@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const ANALYSIS_PROMPT = `당신은 의료 검사 결과지를 분석하는 전문가입니다. 이 이미지는 한국 병원에서 발급된 혈액 검사 결과지입니다.
+const ANALYSIS_PROMPT = `당신은 의료 검사 결과지를 분석하는 전문가입니다. 첨부된 파일(이미지 또는 PDF, 여러 장일 수 있음)은 한국 병원에서 발급된 검사 결과지입니다. 모든 페이지/파일을 종합해서 하나의 결과로 분석하세요.
 
 다음 작업을 수행하세요:
 
@@ -53,9 +53,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
     }
 
-    const { image, mimeType, previousValues } = await request.json();
-    if (!image) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+    const body = await request.json();
+    const { previousValues } = body;
+
+    // Support both new (files array) and legacy (single image) formats
+    let files: { data: string; mimeType: string }[] = [];
+    if (Array.isArray(body.files) && body.files.length > 0) {
+      files = body.files;
+    } else if (body.image) {
+      files = [{ data: body.image, mimeType: body.mimeType || 'image/jpeg' }];
+    }
+
+    if (files.length === 0) {
+      return NextResponse.json({ error: 'No files provided' }, { status: 400 });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -72,15 +82,20 @@ export async function POST(request: Request) {
       prompt += `\n\n이전 회차 검사 결과(참고용):\n${JSON.stringify(previousValues, null, 2)}\n\n이번 결과와 비교해서 "comparison_note" 필드에 주요 변화를 서술하세요.`;
     }
 
-    const result = await model.generateContent([
+    const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
       { text: prompt },
-      {
+    ];
+
+    for (const f of files) {
+      parts.push({
         inlineData: {
-          data: image.replace(/^data:image\/\w+;base64,/, ''),
-          mimeType: mimeType || 'image/jpeg',
+          data: f.data.replace(/^data:[^;]+;base64,/, ''),
+          mimeType: f.mimeType || 'image/jpeg',
         },
-      },
-    ]);
+      });
+    }
+
+    const result = await model.generateContent(parts);
 
     const response = result.response;
     const text = response.text();
