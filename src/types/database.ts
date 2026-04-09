@@ -129,3 +129,28 @@ export interface MoodRecord {
   note: string | null;
   recorded_at: string;
 }
+
+export interface LabValue {
+  name: string;           // 항목명 (예: "공복혈당", "HbA1c", "LDL")
+  name_en?: string;       // 영문명
+  value: number | string; // 측정값
+  unit: string;           // 단위
+  reference_range?: string; // 정상범위 (예: "70-100")
+  status: 'normal' | 'low' | 'high' | 'critical' | 'unknown';
+  category?: string;      // 카테고리 (혈당, 지질, 간기능, 신장기능 등)
+}
+
+export interface LabReport {
+  id: string;
+  user_id: string;
+  tested_at: string;      // 검사 날짜
+  hospital_name: string | null;
+  image_url: string | null;
+  raw_text: string | null;        // OCR 원문
+  lab_values: LabValue[];          // 파싱된 검사 항목
+  ai_summary: string | null;       // AI 요약
+  ai_analysis: string | null;      // AI 상세 분석
+  ai_recommendations: string[] | null; // AI 권고사항
+  comparison_note: string | null;  // 이전 회차 대비 변화
+  created_at: string;
+}

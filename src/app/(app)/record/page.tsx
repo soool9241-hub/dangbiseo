@@ -7,6 +7,7 @@ import {
   UtensilsCrossed,
   Dumbbell,
   Heart,
+  FileText,
 } from "lucide-react";
 import { useRecordsStore } from "@/stores/records-store";
 import { isToday } from "date-fns";
@@ -107,6 +108,27 @@ export default function RecordHubPage() {
           );
         })}
       </div>
+
+      {/* Lab Reports - Featured */}
+      <Link
+        href="/lab-reports"
+        className="block rounded-2xl p-5 bg-gradient-to-br from-teal-500 to-teal-600 text-white active:scale-[0.98] transition-transform"
+      >
+        <div className="flex items-center gap-4">
+          <div className="bg-white/20 rounded-full p-3">
+            <FileText className="size-7" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-base">검사 기록 📸</span>
+              <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full font-semibold">AI</span>
+            </div>
+            <p className="text-xs text-white/90 mt-0.5">
+              검사지 사진 업로드 → AI 자동 분석
+            </p>
+          </div>
+        </div>
+      </Link>
     </div>
   );
 }

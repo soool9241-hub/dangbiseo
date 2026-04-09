@@ -42,7 +42,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Protected routes - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/record', '/trends', '/history', '/hba1c', '/foods', '/emergency', '/reports', '/settings'];
+  const protectedPaths = ['/dashboard', '/record', '/trends', '/history', '/hba1c', '/foods', '/emergency', '/reports', '/settings', '/lab-reports'];
   const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path));
 
   if (!user && isProtectedPath) {
