@@ -40,6 +40,11 @@ export default function MealRecordPage() {
   const [quickCarbs, setQuickCarbs] = useState(0);
   const [customCarbInput, setCustomCarbInput] = useState("");
   const [note, setNote] = useState("");
+  const [recordTime, setRecordTime] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
 
   // Detail mode
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,7 +116,7 @@ export default function MealRecordPage() {
 
     addMealRecord({
       meal_type: mealType,
-      eaten_at: new Date().toISOString(),
+      eaten_at: new Date(recordTime).toISOString(),
       total_carbs: totalCarbs,
       total_calories: null,
       photo_url: null,
@@ -302,6 +307,17 @@ export default function MealRecordPage() {
           )}
         </>
       )}
+
+      {/* Date/Time */}
+      <div className="mb-4">
+        <label className="text-sm font-medium text-muted-foreground block mb-1">식사 시간</label>
+        <input
+          type="datetime-local"
+          value={recordTime}
+          onChange={(e) => setRecordTime(e.target.value)}
+          className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
+        />
+      </div>
 
       {/* Note */}
       <Textarea

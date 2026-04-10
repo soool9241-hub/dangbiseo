@@ -33,7 +33,13 @@ export default function InsulinRecordPage() {
   const [isCustom, setIsCustom] = useState(false);
   const [customName, setCustomName] = useState("");
   const [dose, setDose] = useState(5);
+  const [doseInput, setDoseInput] = useState("5");
   const [site, setSite] = useState<InjectionSite>("abdomen");
+  const [recordTime, setRecordTime] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
 
   const handleSelectInsulin = (name: string, type: InsulinType) => {
     setSelectedInsulin(name);
@@ -60,7 +66,7 @@ export default function InsulinRecordPage() {
       insulin_name: name,
       insulin_type: insulinType,
       dose,
-      injected_at: new Date().toISOString(),
+      injected_at: new Date(recordTime).toISOString(),
       injection_site: site,
       note: null,
     });
@@ -161,14 +167,42 @@ export default function InsulinRecordPage() {
         <div className="flex justify-center">
           <NumberStepper
             value={dose}
-            onChange={setDose}
+            onChange={(v) => { setDose(v); setDoseInput(String(v)); }}
             min={0}
-            max={50}
+            max={100}
             step={0.5}
             unit="단위 (U)"
             size="lg"
           />
         </div>
+        <div className="flex items-center gap-2 justify-center mt-2">
+          <span className="text-xs text-muted-foreground">직접 입력:</span>
+          <Input
+            type="number"
+            value={doseInput}
+            onChange={(e) => {
+              setDoseInput(e.target.value);
+              const v = parseFloat(e.target.value);
+              if (!isNaN(v) && v >= 0 && v <= 100) setDose(v);
+            }}
+            className="h-8 w-24 text-center text-sm"
+            step="0.5"
+            min="0"
+            max="100"
+          />
+          <span className="text-xs text-muted-foreground">U</span>
+        </div>
+      </div>
+
+      {/* Date/Time */}
+      <div className="space-y-2 mb-6">
+        <label className="text-sm font-medium text-muted-foreground">투여 시간</label>
+        <input
+          type="datetime-local"
+          value={recordTime}
+          onChange={(e) => setRecordTime(e.target.value)}
+          className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
+        />
       </div>
 
       {/* Injection site */}

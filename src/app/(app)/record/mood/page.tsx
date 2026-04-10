@@ -38,6 +38,11 @@ export default function MoodRecordPage() {
   const [stressLevel, setStressLevel] = useState(3);
   const [selectedFactors, setSelectedFactors] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const [recordTime, setRecordTime] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
 
   const toggleFactor = (factor: string) => {
     setSelectedFactors((prev) =>
@@ -57,7 +62,7 @@ export default function MoodRecordPage() {
       stress_level: stressLevel,
       factors: selectedFactors,
       note: note.trim() || null,
-      recorded_at: new Date().toISOString(),
+      recorded_at: new Date(recordTime).toISOString(),
     });
     toast.success("기분이 기록되었습니다");
     router.back();
@@ -145,6 +150,17 @@ export default function MoodRecordPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Date/Time */}
+      <div className="mb-4">
+        <label className="text-sm font-medium text-muted-foreground block mb-1">기록 시간</label>
+        <input
+          type="datetime-local"
+          value={recordTime}
+          onChange={(e) => setRecordTime(e.target.value)}
+          className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
+        />
       </div>
 
       {/* Note */}

@@ -33,6 +33,11 @@ export default function GlucoseRecordPage() {
   const [timing, setTiming] = useState<GlucoseTiming>("fasting");
   const [source, setSource] = useState<GlucoseSource>("manual");
   const [note, setNote] = useState("");
+  const [recordTime, setRecordTime] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
 
   const numValue = display ? parseInt(display, 10) : 0;
 
@@ -52,7 +57,7 @@ export default function GlucoseRecordPage() {
     }
     addGlucoseRecord({
       value: numValue,
-      measured_at: new Date().toISOString(),
+      measured_at: new Date(recordTime).toISOString(),
       source,
       timing,
       note: note.trim() || null,
@@ -123,6 +128,17 @@ export default function GlucoseRecordPage() {
             {opt.label}
           </button>
         ))}
+      </div>
+
+      {/* Date/Time */}
+      <div className="mb-4">
+        <label className="text-sm font-medium text-muted-foreground block mb-1">측정 시간</label>
+        <input
+          type="datetime-local"
+          value={recordTime}
+          onChange={(e) => setRecordTime(e.target.value)}
+          className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
+        />
       </div>
 
       {/* Note */}

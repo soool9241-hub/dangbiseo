@@ -79,6 +79,11 @@ export default function ExerciseRecordPage() {
   const [glucoseAfter, setGlucoseAfter] = useState("");
   const [carbSupplement, setCarbSupplement] = useState(0);
   const [note, setNote] = useState("");
+  const [recordTime, setRecordTime] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
 
   const guideText = getGuideText(exerciseType, intensity, duration);
 
@@ -89,7 +94,7 @@ export default function ExerciseRecordPage() {
       intensity,
       steps: null,
       calories_burned: null,
-      started_at: new Date().toISOString(),
+      started_at: new Date(recordTime).toISOString(),
       glucose_before: glucoseBefore ? parseInt(glucoseBefore, 10) : null,
       glucose_after: glucoseAfter ? parseInt(glucoseAfter, 10) : null,
       carb_supplement: carbSupplement > 0 ? carbSupplement : null,
@@ -236,6 +241,17 @@ export default function ExerciseRecordPage() {
             size="md"
           />
         </div>
+      </div>
+
+      {/* Date/Time */}
+      <div className="space-y-2 mb-6">
+        <label className="text-sm font-medium text-muted-foreground">운동 시작 시간</label>
+        <input
+          type="datetime-local"
+          value={recordTime}
+          onChange={(e) => setRecordTime(e.target.value)}
+          className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
+        />
       </div>
 
       {/* Note */}
