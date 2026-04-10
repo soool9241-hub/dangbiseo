@@ -13,6 +13,7 @@ import {
   X,
   FileText,
   Plus,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ type AnalysisResult = {
 type UploadedFile = {
   id: string;
   name: string;
-  data: string; // base64 data URL
+  data: string;
   mimeType: string;
   size: number;
   isPdf: boolean;
@@ -47,11 +48,13 @@ export default function NewLabReportPage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [savingFiles, setSavingFiles] = useState(false);
+  const [savedRecordId, setSavedRecordId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisSaved, setAnalysisSaved] = useState(false);
 
-  // Resize image to max 1200px for OCR (reduces base64 size significantly)
+  // Resize image for OCR (1200px max, keeps PDF as-is)
   const resizeImage = (dataUrl: string, maxSize: number): Promise<string> =>
     new Promise((resolve) => {
       const img = document.createElement("img");
@@ -123,37 +126,86 @@ export default function NewLabReportPage() {
     try {
       const newFiles = await Promise.all(toAdd.map(readFile));
       setFiles((prev) => [...prev, ...newFiles]);
-      setResult(null); // reset analysis when files change
     } catch {
       toast.error("파일을 읽는 중 오류가 발생했습니다");
     }
-
     e.target.value = "";
   };
 
   const removeFile = (id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
-    setResult(null);
   };
 
-  // Step 1: Upload button → extract text via Gemini
-  // Files are sent in batches of 3 to stay under Vercel's 4.5MB body limit
-  const handleAnalyze = async () => {
+  // ──────────────────────────────────────────────
+  // STEP 1: 파일 원본 저장 (보관)
+  // ──────────────────────────────────────────────
+  const handleSaveFiles = async () => {
     if (files.length === 0 || !user) return;
+
+    setSavingFiles(true);
+    try {
+      const supabase = createClient();
+      const thumbnail = files.find((f) => !f.isPdf)?.data || null;
+      const filesToSave = files.map((f) => ({
+        name: f.name,
+        data: f.data,
+        mimeType: f.mimeType,
+        size: f.size,
+        isPdf: f.isPdf,
+      }));
+
+      const { data, error } = await supabase
+        .from("lab_reports")
+        .insert({
+          user_id: user.id,
+          tested_at: new Date().toISOString().split("T")[0],
+          hospital_name: null,
+          image_url: thumbnail,
+          files: filesToSave,
+          lab_values: [],
+          ai_summary: null,
+          ai_analysis: null,
+          ai_recommendations: null,
+          comparison_note: null,
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+
+      setSavedRecordId(data.id);
+      toast.success(`${files.length}개 파일 원본 저장 완료!`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "파일 저장 중 오류가 발생했습니다"
+      );
+    } finally {
+      setSavingFiles(false);
+    }
+  };
+
+  // ──────────────────────────────────────────────
+  // STEP 2: AI 분석 → 텍스트 추출 → 데이터 저장
+  // ──────────────────────────────────────────────
+  const handleAnalyzeAndSave = async () => {
+    if (files.length === 0 || !user || !savedRecordId) return;
 
     setAnalyzing(true);
     try {
       const supabase = createClient();
+
+      // Get previous report for comparison
       const { data: previousReports } = await supabase
         .from("lab_reports")
         .select("lab_values")
         .eq("user_id", user.id)
+        .neq("id", savedRecordId)
         .order("tested_at", { ascending: false })
         .limit(1);
 
       const previousValues = previousReports?.[0]?.lab_values || [];
 
-      // Resize images for API (keeps PDF as-is, compresses images to 1200px)
+      // Compress images for API
       const compressedFiles = await Promise.all(
         files.map(async (f) => {
           if (f.isPdf) return { data: f.data, mimeType: f.mimeType };
@@ -162,7 +214,7 @@ export default function NewLabReportPage() {
         })
       );
 
-      // Split into batches of 3 to avoid body size limit
+      // Send in batches of 3
       const BATCH_SIZE = 3;
       const batches: { data: string; mimeType: string }[][] = [];
       for (let i = 0; i < compressedFiles.length; i += BATCH_SIZE) {
@@ -191,7 +243,6 @@ export default function NewLabReportPage() {
         if (!mergedResult) {
           mergedResult = batchResult;
         } else {
-          // Merge lab_values from subsequent batches (deduplicate by name)
           const existingNames = new Set(mergedResult.lab_values.map((v) => v.name));
           for (const v of batchResult.lab_values) {
             if (!existingNames.has(v.name)) {
@@ -199,69 +250,45 @@ export default function NewLabReportPage() {
               existingNames.add(v.name);
             }
           }
-          // Use first batch's metadata (tested_at, hospital_name, summary, etc.)
-          if (!mergedResult.tested_at && batchResult.tested_at) {
+          if (!mergedResult.tested_at && batchResult.tested_at)
             mergedResult.tested_at = batchResult.tested_at;
-          }
-          if (!mergedResult.hospital_name && batchResult.hospital_name) {
+          if (!mergedResult.hospital_name && batchResult.hospital_name)
             mergedResult.hospital_name = batchResult.hospital_name;
-          }
         }
       }
 
       if (!mergedResult) throw new Error("분석 결과가 없습니다");
 
-      setResult(mergedResult);
-      toast.success(`${mergedResult.lab_values.length}개 항목을 추출했어요`);
+      // Update the saved record with analysis data
+      const { error } = await supabase
+        .from("lab_reports")
+        .update({
+          tested_at: mergedResult.tested_at || new Date().toISOString().split("T")[0],
+          hospital_name: mergedResult.hospital_name,
+          lab_values: mergedResult.lab_values,
+          ai_summary: mergedResult.ai_summary,
+          ai_analysis: mergedResult.ai_analysis,
+          ai_recommendations: mergedResult.ai_recommendations,
+          comparison_note: mergedResult.comparison_note || null,
+        })
+        .eq("id", savedRecordId);
+
+      if (error) throw error;
+
+      setAnalysisResult(mergedResult);
+      setAnalysisSaved(true);
+      toast.success(`${mergedResult.lab_values.length}개 항목 추출 · 저장 완료!`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "분석 중 오류가 발생했습니다");
+      toast.error(
+        error instanceof Error ? error.message : "AI 분석 중 오류가 발생했습니다"
+      );
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // Step 2: Save button → save original files + extracted data
-  const handleSave = async () => {
-    if (!result || files.length === 0 || !user) return;
-
-    setSaving(true);
-    try {
-      const supabase = createClient();
-      const thumbnail = files.find((f) => !f.isPdf)?.data || files[0]?.data || null;
-
-      const filesToSave = files.map((f) => ({
-        name: f.name,
-        data: f.data,
-        mimeType: f.mimeType,
-        size: f.size,
-        isPdf: f.isPdf,
-      }));
-
-      const { error } = await supabase.from("lab_reports").insert({
-        user_id: user.id,
-        tested_at: result.tested_at || new Date().toISOString().split("T")[0],
-        hospital_name: result.hospital_name,
-        image_url: thumbnail,
-        files: filesToSave,
-        lab_values: result.lab_values,
-        ai_summary: result.ai_summary,
-        ai_analysis: result.ai_analysis,
-        ai_recommendations: result.ai_recommendations,
-        comparison_note: result.comparison_note || null,
-      });
-
-      if (error) throw error;
-
-      toast.success("저장 완료!");
-      router.push("/lab-reports");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "저장 중 오류가 발생했습니다");
-      setSaving(false);
-    }
-  };
-
-  const abnormalCount = result
-    ? result.lab_values.filter(
+  const abnormalCount = analysisResult
+    ? analysisResult.lab_values.filter(
         (v) => v.status === "high" || v.status === "low" || v.status === "critical"
       ).length
     : 0;
@@ -272,7 +299,7 @@ export default function NewLabReportPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   };
 
-  const busy = analyzing || saving;
+  const busy = savingFiles || analyzing;
 
   return (
     <div className="py-4 pb-24">
@@ -283,6 +310,7 @@ export default function NewLabReportPage() {
         <h1 className="text-xl font-bold">검사지 업로드</h1>
       </div>
 
+      {/* ── 파일 선택 화면 ── */}
       {files.length === 0 ? (
         <div className="space-y-3">
           <Card
@@ -295,7 +323,9 @@ export default function NewLabReportPage() {
               </div>
               <div className="text-center">
                 <p className="font-semibold">카메라로 촬영</p>
-                <p className="text-xs text-muted-foreground mt-1">검사지를 바로 촬영하세요</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  검사지를 바로 촬영하세요
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -337,15 +367,15 @@ export default function NewLabReportPage() {
           <Card className="bg-muted/50 border-dashed">
             <CardContent className="py-4 text-xs text-muted-foreground">
               <p className="font-semibold text-foreground mb-1">📋 사용 방법</p>
-              <ul className="space-y-1 ml-3">
+              <ul className="space-y-1.5 ml-3">
                 <li>
-                  1. <b>파일 선택</b> — 한 번에 여러 장 선택 가능 (최대 20개 · 30MB)
+                  <b>① 파일 선택</b> — 한 번에 여러 장 선택 (최대 20개 · 30MB)
                 </li>
                 <li>
-                  2. <b>업로드(분석)</b> — AI가 검사지 텍스트를 자동 추출
+                  <b>② 원본 저장</b> — 업로드한 파일을 내 기록에 보관
                 </li>
                 <li>
-                  3. <b>저장</b> — 원본 파일 + 추출 데이터를 내 기록으로 저장
+                  <b>③ AI 분석</b> — 텍스트 추출 후 검사 데이터로 저장
                 </li>
               </ul>
             </CardContent>
@@ -353,7 +383,7 @@ export default function NewLabReportPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Files preview list */}
+          {/* ── 파일 미리보기 목록 ── */}
           <div className="space-y-2">
             {files.map((f) => (
               <Card key={f.id} className="overflow-hidden">
@@ -381,7 +411,7 @@ export default function NewLabReportPage() {
                         {f.isPdf ? "PDF" : "이미지"} · {formatSize(f.size)}
                       </p>
                     </div>
-                    {!busy && !result && (
+                    {!savedRecordId && !busy && (
                       <button
                         onClick={() => removeFile(f.id)}
                         className="size-8 rounded-full hover:bg-muted flex items-center justify-center shrink-0"
@@ -394,7 +424,7 @@ export default function NewLabReportPage() {
               </Card>
             ))}
 
-            {!busy && !result && files.length < MAX_FILES && (
+            {!savedRecordId && !busy && files.length < MAX_FILES && (
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full rounded-xl border-2 border-dashed border-muted-foreground/30 py-3 text-sm text-muted-foreground hover:border-muted-foreground/50 hover:bg-muted/30 transition-colors flex items-center justify-center gap-1"
@@ -414,26 +444,73 @@ export default function NewLabReportPage() {
             />
           </div>
 
-          {/* Step 1: Upload/Analyze button */}
-          {!result && !analyzing && (
+          {/* ── STEP 1: 파일 원본 저장 ── */}
+          {!savedRecordId && (
             <Button
-              onClick={handleAnalyze}
+              onClick={handleSaveFiles}
+              disabled={savingFiles}
               className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-base font-semibold"
             >
-              <Sparkles className="size-4 mr-1" />
-              업로드 · AI 텍스트 추출 ({files.length}/{MAX_FILES})
+              {savingFiles ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-1" />
+                  파일 저장 중...
+                </>
+              ) : (
+                <>
+                  <Save className="size-4 mr-1" />
+                  ① 원본 파일 저장 ({files.length}개)
+                </>
+              )}
             </Button>
           )}
 
-          {analyzing && (
-            <Card className="border-teal-200 bg-teal-50 dark:bg-teal-950/30 dark:border-teal-800">
-              <CardContent className="flex items-center gap-3 py-6">
-                <Loader2 className="size-5 animate-spin text-teal-600 dark:text-teal-400 shrink-0" />
+          {/* ── 파일 저장 완료 표시 ── */}
+          {savedRecordId && !analysisSaved && (
+            <Card className="border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800">
+              <CardContent className="flex items-center gap-3 py-4">
+                <CheckCircle2 className="size-5 text-green-600 dark:text-green-400 shrink-0" />
                 <div className="min-w-0">
-                  <p className="font-semibold text-teal-900 dark:text-teal-100">
+                  <p className="font-semibold text-green-900 dark:text-green-100">
+                    파일 {files.length}개 원본 저장 완료!
+                  </p>
+                  <p className="text-xs text-green-700 dark:text-green-300 mt-0.5">
+                    이제 AI 분석을 실행해서 검사 데이터를 추출하세요
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── STEP 2: AI 분석 + 데이터 저장 ── */}
+          {savedRecordId && !analysisSaved && !analyzing && (
+            <div className="space-y-2">
+              <Button
+                onClick={handleAnalyzeAndSave}
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-base font-semibold"
+              >
+                <Sparkles className="size-4 mr-1" />
+                ② AI 분석 · 텍스트 추출 저장
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => router.push("/lab-reports")}
+                className="w-full text-muted-foreground"
+              >
+                분석 없이 파일만 보관하기
+              </Button>
+            </div>
+          )}
+
+          {analyzing && (
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800">
+              <CardContent className="flex items-center gap-3 py-6">
+                <Loader2 className="size-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">
                     AI가 {files.length}개 파일을 분석 중...
                   </p>
-                  <p className="text-xs text-teal-700 dark:text-teal-300 mt-0.5">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
                     텍스트 추출에는 10~60초 정도 소요돼요
                   </p>
                 </div>
@@ -441,23 +518,40 @@ export default function NewLabReportPage() {
             </Card>
           )}
 
-          {/* Step 2: Analysis preview + Save */}
-          {result && (
+          {/* ── 분석 결과 미리보기 ── */}
+          {analysisSaved && analysisResult && (
             <>
+              <Card className="border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800">
+                <CardContent className="flex items-center gap-3 py-4">
+                  <CheckCircle2 className="size-5 text-green-600 dark:text-green-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-green-900 dark:text-green-100">
+                      모두 완료!
+                    </p>
+                    <p className="text-xs text-green-700 dark:text-green-300 mt-0.5">
+                      원본 파일 {files.length}개 보관 + 검사 항목{" "}
+                      {analysisResult.lab_values.length}개 추출 저장
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardContent className="py-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h3 className="font-semibold text-base">추출 결과 미리보기</h3>
-                      {result.hospital_name && (
+                      <h3 className="font-semibold text-base">추출 결과</h3>
+                      {analysisResult.hospital_name && (
                         <p className="text-xs text-muted-foreground">
-                          {result.hospital_name} · {result.tested_at}
+                          {analysisResult.hospital_name} · {analysisResult.tested_at}
                         </p>
                       )}
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">항목</p>
-                      <p className="text-lg font-bold">{result.lab_values.length}</p>
+                      <p className="text-lg font-bold">
+                        {analysisResult.lab_values.length}
+                      </p>
                     </div>
                   </div>
                   {abnormalCount > 0 && (
@@ -465,20 +559,20 @@ export default function NewLabReportPage() {
                       ⚠️ 이상 수치 <b>{abnormalCount}개</b> 발견
                     </div>
                   )}
-                  {result.ai_summary && (
+                  {analysisResult.ai_summary && (
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      {result.ai_summary}
+                      {analysisResult.ai_summary}
                     </p>
                   )}
                 </CardContent>
               </Card>
 
-              {result.lab_values.length > 0 && (
+              {analysisResult.lab_values.length > 0 && (
                 <Card>
                   <CardContent className="py-4">
                     <h3 className="font-semibold text-base mb-3">검사 항목</h3>
                     <div className="space-y-2">
-                      {result.lab_values.map((v, idx) => (
+                      {analysisResult.lab_values.map((v, idx) => (
                         <div
                           key={idx}
                           className="flex items-center justify-between py-2 border-b last:border-0"
@@ -512,33 +606,12 @@ export default function NewLabReportPage() {
                 </Card>
               )}
 
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setResult(null)}
-                  disabled={saving}
-                  className="flex-1 h-12"
-                >
-                  다시 분석
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex-[2] h-12 bg-teal-600 hover:bg-teal-700 text-base font-semibold"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin mr-1" />
-                      저장 중...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="size-4 mr-1" />
-                      내 기록으로 저장
-                    </>
-                  )}
-                </Button>
-              </div>
+              <Button
+                onClick={() => router.push(`/lab-reports/${savedRecordId}`)}
+                className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-base font-semibold"
+              >
+                상세 보기
+              </Button>
             </>
           )}
         </div>
