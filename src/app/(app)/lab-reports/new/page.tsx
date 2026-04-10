@@ -51,6 +51,27 @@ export default function NewLabReportPage() {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
 
+  // Resize image to max 1200px for OCR (reduces base64 size significantly)
+  const resizeImage = (dataUrl: string, maxSize: number): Promise<string> =>
+    new Promise((resolve) => {
+      const img = document.createElement("img");
+      img.onload = () => {
+        const { width, height } = img;
+        if (width <= maxSize && height <= maxSize) {
+          resolve(dataUrl);
+          return;
+        }
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = dataUrl;
+    });
+
   const readFile = (file: File): Promise<UploadedFile> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -116,6 +137,7 @@ export default function NewLabReportPage() {
   };
 
   // Step 1: Upload button → extract text via Gemini
+  // Files are sent in batches of 3 to stay under Vercel's 4.5MB body limit
   const handleAnalyze = async () => {
     if (files.length === 0 || !user) return;
 
@@ -131,23 +153,66 @@ export default function NewLabReportPage() {
 
       const previousValues = previousReports?.[0]?.lab_values || [];
 
-      const response = await fetch("/api/lab-report/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: files.map((f) => ({ data: f.data, mimeType: f.mimeType })),
-          previousValues,
-        }),
-      });
+      // Resize images for API (keeps PDF as-is, compresses images to 1200px)
+      const compressedFiles = await Promise.all(
+        files.map(async (f) => {
+          if (f.isPdf) return { data: f.data, mimeType: f.mimeType };
+          const resized = await resizeImage(f.data, 1200);
+          return { data: resized, mimeType: "image/jpeg" };
+        })
+      );
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "분석 실패");
+      // Split into batches of 3 to avoid body size limit
+      const BATCH_SIZE = 3;
+      const batches: { data: string; mimeType: string }[][] = [];
+      for (let i = 0; i < compressedFiles.length; i += BATCH_SIZE) {
+        batches.push(compressedFiles.slice(i, i + BATCH_SIZE));
       }
 
-      const analysis: AnalysisResult = await response.json();
-      setResult(analysis);
-      toast.success(`${analysis.lab_values.length}개 항목을 추출했어요`);
+      let mergedResult: AnalysisResult | null = null;
+
+      for (let i = 0; i < batches.length; i++) {
+        const response = await fetch("/api/lab-report/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            files: batches[i],
+            previousValues: i === 0 ? previousValues : [],
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || "분석 실패");
+        }
+
+        const batchResult: AnalysisResult = await response.json();
+
+        if (!mergedResult) {
+          mergedResult = batchResult;
+        } else {
+          // Merge lab_values from subsequent batches (deduplicate by name)
+          const existingNames = new Set(mergedResult.lab_values.map((v) => v.name));
+          for (const v of batchResult.lab_values) {
+            if (!existingNames.has(v.name)) {
+              mergedResult.lab_values.push(v);
+              existingNames.add(v.name);
+            }
+          }
+          // Use first batch's metadata (tested_at, hospital_name, summary, etc.)
+          if (!mergedResult.tested_at && batchResult.tested_at) {
+            mergedResult.tested_at = batchResult.tested_at;
+          }
+          if (!mergedResult.hospital_name && batchResult.hospital_name) {
+            mergedResult.hospital_name = batchResult.hospital_name;
+          }
+        }
+      }
+
+      if (!mergedResult) throw new Error("분석 결과가 없습니다");
+
+      setResult(mergedResult);
+      toast.success(`${mergedResult.lab_values.length}개 항목을 추출했어요`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "분석 중 오류가 발생했습니다");
     } finally {
