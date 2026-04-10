@@ -152,7 +152,7 @@ export default function InsulinRecordPage() {
       <div>
         <p className="text-sm font-medium text-muted-foreground mb-2">단위 (U)</p>
         <div className="flex items-center gap-2">
-          {[1, 2, 3, 5, 10].map((v) => (
+          {[10, 15, 20, 25].map((v) => (
             <button
               key={v}
               onClick={() => setDose(String(v))}
