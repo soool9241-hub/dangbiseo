@@ -6,34 +6,53 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NumberStepper } from "@/components/shared/NumberStepper";
-import { useRecordsStore } from "@/stores/records-store";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type { InsulinType, InjectionSite } from "@/types/database";
 import { cn } from "@/lib/utils";
 
-const injectionSites: { value: InjectionSite; label: string; emoji: string }[] = [
-  { value: "abdomen", label: "배", emoji: "🫃" },
-  { value: "thigh", label: "허벅지", emoji: "🦵" },
-  { value: "arm", label: "팔", emoji: "💪" },
-  { value: "hip", label: "엉덩이", emoji: "🍑" },
+const insulinCategories: {
+  type: InsulinType;
+  label: string;
+  examples: { name: string; type: InsulinType }[];
+}[] = [
+  {
+    type: "rapid",
+    label: "속효성 (식사용)",
+    examples: [
+      { name: "노보래피드", type: "rapid" },
+      { name: "휴마로그", type: "rapid" },
+      { name: "피아스프", type: "rapid" },
+      { name: "애피드라", type: "rapid" },
+    ],
+  },
+  {
+    type: "long",
+    label: "지속성 (기저용)",
+    examples: [
+      { name: "트레시바", type: "long" },
+      { name: "란투스", type: "long" },
+      { name: "레버미어", type: "long" },
+      { name: "투제오", type: "long" },
+    ],
+  },
+];
+
+const injectionSites: { value: InjectionSite; label: string }[] = [
+  { value: "abdomen", label: "배" },
+  { value: "thigh", label: "허벅지" },
+  { value: "arm", label: "팔" },
+  { value: "hip", label: "엉덩이" },
 ];
 
 export default function InsulinRecordPage() {
   const router = useRouter();
   const { addInsulinRecord } = useSync();
-  const preferredInsulins = useRecordsStore((s) => s.profile.preferred_insulins);
 
-  const [selectedInsulin, setSelectedInsulin] = useState(
-    preferredInsulins.length > 0 ? preferredInsulins[0].name : ""
-  );
-  const [insulinType, setInsulinType] = useState<InsulinType>(
-    preferredInsulins.length > 0 ? preferredInsulins[0].type : "rapid"
-  );
-  const [isCustom, setIsCustom] = useState(false);
+  const [selectedName, setSelectedName] = useState("노보래피드");
+  const [selectedType, setSelectedType] = useState<InsulinType>("rapid");
   const [customName, setCustomName] = useState("");
-  const [dose, setDose] = useState(5);
-  const [doseInput, setDoseInput] = useState("5");
+  const [isCustom, setIsCustom] = useState(false);
+  const [dose, setDose] = useState("");
   const [site, setSite] = useState<InjectionSite>("abdomen");
   const [recordTime, setRecordTime] = useState(() => {
     const now = new Date();
@@ -41,31 +60,27 @@ export default function InsulinRecordPage() {
     return now.toISOString().slice(0, 16);
   });
 
-  const handleSelectInsulin = (name: string, type: InsulinType) => {
-    setSelectedInsulin(name);
-    setInsulinType(type);
+  const handleSelect = (name: string, type: InsulinType) => {
+    setSelectedName(name);
+    setSelectedType(type);
     setIsCustom(false);
   };
 
-  const handleCustom = () => {
-    setIsCustom(true);
-    setSelectedInsulin("");
-  };
-
   const handleSubmit = () => {
-    const name = isCustom ? customName.trim() : selectedInsulin;
+    const name = isCustom ? customName.trim() : selectedName;
     if (!name) {
-      toast.error("인슐린 이름을 입력해 주세요");
+      toast.error("인슐린을 선택해 주세요");
       return;
     }
-    if (dose <= 0) {
-      toast.error("투여량을 입력해 주세요");
+    const doseVal = parseFloat(dose);
+    if (!dose || isNaN(doseVal) || doseVal <= 0) {
+      toast.error("단위를 입력해 주세요");
       return;
     }
     addInsulinRecord({
       insulin_name: name,
-      insulin_type: insulinType,
-      dose,
+      insulin_type: selectedType,
+      dose: doseVal,
       injected_at: new Date(recordTime).toISOString(),
       injection_site: site,
       note: null,
@@ -75,128 +90,97 @@ export default function InsulinRecordPage() {
   };
 
   return (
-    <div className="py-4 flex flex-col min-h-[calc(100vh-5rem)]">
+    <div className="py-4 pb-24 space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => router.back()}
-          className="shrink-0"
-        >
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="size-5" />
         </Button>
         <h1 className="text-xl font-bold">인슐린 기록</h1>
       </div>
 
-      {/* Insulin selector */}
-      <div className="space-y-2 mb-6">
-        <label className="text-sm font-medium text-muted-foreground">
-          인슐린 종류
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {preferredInsulins.map((ins) => (
+      {/* Insulin type + name selection */}
+      {insulinCategories.map((cat) => (
+        <div key={cat.type}>
+          <p className="text-sm font-medium text-muted-foreground mb-2">
+            {cat.label}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {cat.examples.map((ins) => (
+              <button
+                key={ins.name}
+                onClick={() => handleSelect(ins.name, ins.type)}
+                className={cn(
+                  "py-3 rounded-xl text-sm font-semibold transition-colors",
+                  selectedName === ins.name && !isCustom
+                    ? cat.type === "rapid"
+                      ? "bg-blue-500 text-white"
+                      : "bg-violet-500 text-white"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {ins.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Custom insulin */}
+      <button
+        onClick={() => {
+          setIsCustom(true);
+          setSelectedName("");
+        }}
+        className={cn(
+          "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
+          isCustom ? "bg-blue-500 text-white" : "bg-muted text-muted-foreground"
+        )}
+      >
+        기타 인슐린 직접 입력
+      </button>
+      {isCustom && (
+        <Input
+          placeholder="인슐린 이름"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          autoFocus
+        />
+      )}
+
+      {/* Dose — simple number input */}
+      <div>
+        <p className="text-sm font-medium text-muted-foreground mb-2">단위 (U)</p>
+        <div className="flex items-center gap-2">
+          {[1, 2, 3, 5, 10].map((v) => (
             <button
-              key={ins.name}
-              onClick={() => handleSelectInsulin(ins.name, ins.type)}
+              key={v}
+              onClick={() => setDose(String(v))}
               className={cn(
-                "px-4 py-2.5 rounded-xl text-sm font-medium transition-colors",
-                selectedInsulin === ins.name && !isCustom
+                "flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors",
+                dose === String(v)
                   ? "bg-blue-500 text-white"
                   : "bg-muted text-muted-foreground"
               )}
             >
-              {ins.name}
-              <span className="ml-1 text-xs opacity-70">
-                ({ins.type === "rapid" ? "초속효" : ins.type === "long" ? "지속형" : ins.type})
-              </span>
+              {v}
             </button>
           ))}
-          <button
-            onClick={handleCustom}
-            className={cn(
-              "px-4 py-2.5 rounded-xl text-sm font-medium transition-colors",
-              isCustom
-                ? "bg-blue-500 text-white"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            기타
-          </button>
-        </div>
-        {isCustom && (
-          <div className="space-y-2 pt-2">
-            <Input
-              placeholder="인슐린 이름 입력"
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-            />
-            <div className="flex gap-2">
-              {(
-                [
-                  { value: "rapid" as InsulinType, label: "초속효" },
-                  { value: "short" as InsulinType, label: "속효" },
-                  { value: "intermediate" as InsulinType, label: "중간형" },
-                  { value: "long" as InsulinType, label: "지속형" },
-                  { value: "mixed" as InsulinType, label: "혼합형" },
-                ] as const
-              ).map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => setInsulinType(t.value)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    insulinType === t.value
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Dose */}
-      <div className="space-y-2 mb-6">
-        <label className="text-sm font-medium text-muted-foreground">
-          투여량
-        </label>
-        <div className="flex justify-center">
-          <NumberStepper
-            value={dose}
-            onChange={(v) => { setDose(v); setDoseInput(String(v)); }}
-            min={0}
-            max={100}
-            step={0.5}
-            unit="단위 (U)"
-            size="lg"
-          />
-        </div>
-        <div className="flex items-center gap-2 justify-center mt-2">
-          <span className="text-xs text-muted-foreground">직접 입력:</span>
           <Input
             type="number"
-            value={doseInput}
-            onChange={(e) => {
-              setDoseInput(e.target.value);
-              const v = parseFloat(e.target.value);
-              if (!isNaN(v) && v >= 0 && v <= 100) setDose(v);
-            }}
-            className="h-8 w-24 text-center text-sm"
+            placeholder="직접"
+            value={dose}
+            onChange={(e) => setDose(e.target.value)}
+            className="w-20 h-10 text-center font-semibold"
             step="0.5"
             min="0"
-            max="100"
           />
-          <span className="text-xs text-muted-foreground">U</span>
         </div>
       </div>
 
-      {/* Date/Time */}
-      <div className="space-y-2 mb-6">
-        <label className="text-sm font-medium text-muted-foreground">투여 시간</label>
+      {/* Time */}
+      <div>
+        <p className="text-sm font-medium text-muted-foreground mb-2">투여 시간</p>
         <input
           type="datetime-local"
           value={recordTime}
@@ -206,24 +190,21 @@ export default function InsulinRecordPage() {
       </div>
 
       {/* Injection site */}
-      <div className="space-y-2 mb-6">
-        <label className="text-sm font-medium text-muted-foreground">
-          주사 부위
-        </label>
+      <div>
+        <p className="text-sm font-medium text-muted-foreground mb-2">주사 부위</p>
         <div className="grid grid-cols-4 gap-2">
           {injectionSites.map((s) => (
             <button
               key={s.value}
               onClick={() => setSite(s.value)}
               className={cn(
-                "flex flex-col items-center gap-1 py-3 rounded-xl text-sm font-medium transition-colors",
+                "py-3 rounded-xl text-sm font-semibold transition-colors",
                 site === s.value
                   ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 ring-2 ring-blue-500"
                   : "bg-muted text-muted-foreground"
               )}
             >
-              <span className="text-2xl">{s.emoji}</span>
-              <span>{s.label}</span>
+              {s.label}
             </button>
           ))}
         </div>
@@ -232,7 +213,8 @@ export default function InsulinRecordPage() {
       {/* Submit */}
       <Button
         onClick={handleSubmit}
-        className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white text-base font-semibold rounded-xl mt-auto"
+        disabled={!dose}
+        className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white text-base font-semibold rounded-xl"
       >
         기록하기
       </Button>
