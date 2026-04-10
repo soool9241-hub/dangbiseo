@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale/ko";
-import { ArrowLeft, Sparkles, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, Sparkles, Trash2, Loader2, FileText, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -143,8 +143,72 @@ export default function LabReportDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Image */}
-      {report.image_url && (
+      {/* Files */}
+      {report.files && report.files.length > 0 ? (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-base">
+                업로드 파일
+              </h3>
+              <Badge variant="secondary" className="h-5 text-xs">
+                {report.files.length}개
+              </Badge>
+            </div>
+            <div className="space-y-3">
+              {report.files.map((f, idx) => (
+                <div key={idx} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {f.isPdf ? (
+                        <FileText className="size-4 text-red-600 dark:text-red-400 shrink-0" />
+                      ) : (
+                        <Image
+                          src={f.data}
+                          alt=""
+                          width={20}
+                          height={20}
+                          className="size-4 rounded object-cover"
+                          unoptimized
+                        />
+                      )}
+                      <span className="text-xs font-medium truncate">{f.name}</span>
+                    </div>
+                    <a
+                      href={f.data}
+                      download={f.name}
+                      className="size-7 rounded-md hover:bg-muted flex items-center justify-center shrink-0"
+                      title="다운로드"
+                    >
+                      <Download className="size-3.5 text-muted-foreground" />
+                    </a>
+                  </div>
+                  {f.isPdf ? (
+                    <div className="rounded-lg border bg-red-50 dark:bg-red-950/20 p-4 flex items-center gap-3">
+                      <FileText className="size-8 text-red-600 dark:text-red-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">PDF 파일</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(f.size / (1024 * 1024)).toFixed(2)}MB · 다운로드 버튼을 눌러 확인
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <Image
+                      src={f.data}
+                      alt={f.name}
+                      width={800}
+                      height={600}
+                      className="w-full h-auto rounded-lg border"
+                      unoptimized
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : report.image_url ? (
         <Card>
           <CardContent className="p-2">
             <Image
@@ -157,7 +221,7 @@ export default function LabReportDetailPage() {
             />
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {/* Lab values grouped by category */}
       {Object.entries(grouped).map(([category, values]) => (

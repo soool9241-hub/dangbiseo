@@ -140,12 +140,21 @@ export interface LabValue {
   category?: string;      // 카테고리 (혈당, 지질, 간기능, 신장기능 등)
 }
 
+export interface LabReportFile {
+  name: string;
+  data: string;      // base64 data URL
+  mimeType: string;
+  size: number;
+  isPdf: boolean;
+}
+
 export interface LabReport {
   id: string;
   user_id: string;
   tested_at: string;      // 검사 날짜
   hospital_name: string | null;
-  image_url: string | null;
+  image_url: string | null;        // 썸네일 (첫 번째 파일)
+  files: LabReportFile[];          // 업로드된 전체 파일
   raw_text: string | null;        // OCR 원문
   lab_values: LabValue[];          // 파싱된 검사 항목
   ai_summary: string | null;       // AI 요약

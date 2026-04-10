@@ -3,7 +3,17 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Camera, Upload, Loader2, Sparkles, X, FileText, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  Upload,
+  Loader2,
+  Sparkles,
+  Save,
+  X,
+  FileText,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -49,7 +59,8 @@ export default function NewLabReportPage() {
           id: `${Date.now()}-${Math.random()}`,
           name: file.name,
           data: reader.result as string,
-          mimeType: file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
+          mimeType:
+            file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
           size: file.size,
           isPdf: file.type === "application/pdf" || file.name.endsWith(".pdf"),
         });
@@ -58,25 +69,44 @@ export default function NewLabReportPage() {
       reader.readAsDataURL(file);
     });
 
+  const MAX_FILES = 20;
+  const MAX_TOTAL_SIZE = 30 * 1024 * 1024;
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []);
     if (selected.length === 0) return;
 
-    const totalSize = [...files, ...selected].reduce((sum, f) => sum + ("size" in f ? f.size : 0), 0);
-    if (totalSize > 20 * 1024 * 1024) {
-      toast.error("전체 파일 크기가 20MB를 초과했습니다");
+    const remaining = MAX_FILES - files.length;
+    if (remaining <= 0) {
+      toast.error(`최대 ${MAX_FILES}개까지만 업로드할 수 있어요`);
+      e.target.value = "";
+      return;
+    }
+
+    let toAdd = selected;
+    if (selected.length > remaining) {
+      toast.error(`${remaining}개만 추가됩니다 (최대 ${MAX_FILES}개)`);
+      toAdd = selected.slice(0, remaining);
+    }
+
+    const totalSize = [...files, ...toAdd].reduce(
+      (sum, f) => sum + ("size" in f ? f.size : 0),
+      0
+    );
+    if (totalSize > MAX_TOTAL_SIZE) {
+      toast.error("전체 파일 크기가 30MB를 초과했습니다");
+      e.target.value = "";
       return;
     }
 
     try {
-      const newFiles = await Promise.all(selected.map(readFile));
+      const newFiles = await Promise.all(toAdd.map(readFile));
       setFiles((prev) => [...prev, ...newFiles]);
-      setResult(null);
+      setResult(null); // reset analysis when files change
     } catch {
       toast.error("파일을 읽는 중 오류가 발생했습니다");
     }
 
-    // Reset input so same file can be selected again
     e.target.value = "";
   };
 
@@ -85,6 +115,7 @@ export default function NewLabReportPage() {
     setResult(null);
   };
 
+  // Step 1: Upload button → extract text via Gemini
   const handleAnalyze = async () => {
     if (files.length === 0 || !user) return;
 
@@ -114,9 +145,9 @@ export default function NewLabReportPage() {
         throw new Error(err.error || "분석 실패");
       }
 
-      const data = await response.json();
-      setResult(data);
-      toast.success("분석 완료!");
+      const analysis: AnalysisResult = await response.json();
+      setResult(analysis);
+      toast.success(`${analysis.lab_values.length}개 항목을 추출했어요`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "분석 중 오류가 발생했습니다");
     } finally {
@@ -124,20 +155,29 @@ export default function NewLabReportPage() {
     }
   };
 
+  // Step 2: Save button → save original files + extracted data
   const handleSave = async () => {
-    if (!result || !user) return;
+    if (!result || files.length === 0 || !user) return;
 
     setSaving(true);
     try {
       const supabase = createClient();
-      // Store the first image (or PDF placeholder) as thumbnail
-      const thumbnail = files[0]?.data || null;
+      const thumbnail = files.find((f) => !f.isPdf)?.data || files[0]?.data || null;
+
+      const filesToSave = files.map((f) => ({
+        name: f.name,
+        data: f.data,
+        mimeType: f.mimeType,
+        size: f.size,
+        isPdf: f.isPdf,
+      }));
 
       const { error } = await supabase.from("lab_reports").insert({
         user_id: user.id,
         tested_at: result.tested_at || new Date().toISOString().split("T")[0],
         hospital_name: result.hospital_name,
         image_url: thumbnail,
+        files: filesToSave,
         lab_values: result.lab_values,
         ai_summary: result.ai_summary,
         ai_analysis: result.ai_analysis,
@@ -146,17 +186,19 @@ export default function NewLabReportPage() {
       });
 
       if (error) throw error;
-      toast.success("저장되었습니다");
+
+      toast.success("저장 완료!");
       router.push("/lab-reports");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "저장 중 오류가 발생했습니다");
-    } finally {
       setSaving(false);
     }
   };
 
   const abnormalCount = result
-    ? result.lab_values.filter((v) => v.status === "high" || v.status === "low" || v.status === "critical").length
+    ? result.lab_values.filter(
+        (v) => v.status === "high" || v.status === "low" || v.status === "critical"
+      ).length
     : 0;
 
   const formatSize = (bytes: number) => {
@@ -165,10 +207,12 @@ export default function NewLabReportPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   };
 
+  const busy = analyzing || saving;
+
   return (
     <div className="py-4 pb-24">
       <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.back()} disabled={busy}>
           <ArrowLeft className="size-5" />
         </Button>
         <h1 className="text-xl font-bold">검사지 업로드</h1>
@@ -200,9 +244,9 @@ export default function NewLabReportPage() {
                 <Upload className="size-7 text-blue-600 dark:text-blue-400" />
               </div>
               <div className="text-center">
-                <p className="font-semibold">파일 업로드</p>
+                <p className="font-semibold">파일 업로드 (다중 선택)</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  이미지 · PDF · 여러 장 가능
+                  이미지 · PDF · 최대 20개
                 </p>
               </div>
             </CardContent>
@@ -227,12 +271,17 @@ export default function NewLabReportPage() {
 
           <Card className="bg-muted/50 border-dashed">
             <CardContent className="py-4 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground mb-1">📋 업로드 팁</p>
+              <p className="font-semibold text-foreground mb-1">📋 사용 방법</p>
               <ul className="space-y-1 ml-3">
-                <li>• 이미지 (JPG, PNG) 또는 PDF 파일 가능</li>
-                <li>• 여러 장의 검사지도 한번에 업로드 가능</li>
-                <li>• 검사지 전체가 선명하게 보이도록 하세요</li>
-                <li>• 전체 파일 크기 최대 20MB</li>
+                <li>
+                  1. <b>파일 선택</b> — 한 번에 여러 장 선택 가능 (최대 20개 · 30MB)
+                </li>
+                <li>
+                  2. <b>업로드(분석)</b> — AI가 검사지 텍스트를 자동 추출
+                </li>
+                <li>
+                  3. <b>저장</b> — 원본 파일 + 추출 데이터를 내 기록으로 저장
+                </li>
               </ul>
             </CardContent>
           </Card>
@@ -267,7 +316,7 @@ export default function NewLabReportPage() {
                         {f.isPdf ? "PDF" : "이미지"} · {formatSize(f.size)}
                       </p>
                     </div>
-                    {!result && (
+                    {!busy && !result && (
                       <button
                         onClick={() => removeFile(f.id)}
                         className="size-8 rounded-full hover:bg-muted flex items-center justify-center shrink-0"
@@ -280,13 +329,13 @@ export default function NewLabReportPage() {
               </Card>
             ))}
 
-            {!result && (
+            {!busy && !result && files.length < MAX_FILES && (
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full rounded-xl border-2 border-dashed border-muted-foreground/30 py-3 text-sm text-muted-foreground hover:border-muted-foreground/50 hover:bg-muted/30 transition-colors flex items-center justify-center gap-1"
               >
                 <Plus className="size-4" />
-                파일 추가
+                파일 추가 ({files.length}/{MAX_FILES})
               </button>
             )}
 
@@ -300,38 +349,41 @@ export default function NewLabReportPage() {
             />
           </div>
 
+          {/* Step 1: Upload/Analyze button */}
           {!result && !analyzing && (
             <Button
               onClick={handleAnalyze}
               className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-base font-semibold"
             >
               <Sparkles className="size-4 mr-1" />
-              AI로 분석하기 ({files.length}개)
+              업로드 · AI 텍스트 추출 ({files.length}/{MAX_FILES})
             </Button>
           )}
 
           {analyzing && (
             <Card className="border-teal-200 bg-teal-50 dark:bg-teal-950/30 dark:border-teal-800">
               <CardContent className="flex items-center gap-3 py-6">
-                <Loader2 className="size-5 animate-spin text-teal-600 dark:text-teal-400" />
-                <div>
-                  <p className="font-semibold text-teal-900 dark:text-teal-100">AI 분석 중...</p>
+                <Loader2 className="size-5 animate-spin text-teal-600 dark:text-teal-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold text-teal-900 dark:text-teal-100">
+                    AI가 {files.length}개 파일을 분석 중...
+                  </p>
                   <p className="text-xs text-teal-700 dark:text-teal-300 mt-0.5">
-                    {files.length}개 파일을 종합 분석하고 있어요 (10-60초)
+                    텍스트 추출에는 10~60초 정도 소요돼요
                   </p>
                 </div>
               </CardContent>
             </Card>
           )}
 
+          {/* Step 2: Analysis preview + Save */}
           {result && (
             <>
-              {/* Summary */}
               <Card>
                 <CardContent className="py-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h3 className="font-semibold text-base">검사 요약</h3>
+                      <h3 className="font-semibold text-base">추출 결과 미리보기</h3>
                       {result.hospital_name && (
                         <p className="text-xs text-muted-foreground">
                           {result.hospital_name} · {result.tested_at}
@@ -348,26 +400,32 @@ export default function NewLabReportPage() {
                       ⚠️ 이상 수치 <b>{abnormalCount}개</b> 발견
                     </div>
                   )}
-                  <p className="text-sm text-muted-foreground leading-relaxed">{result.ai_summary}</p>
+                  {result.ai_summary && (
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {result.ai_summary}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
-              {/* Lab values */}
-              <Card>
-                <CardContent className="py-4">
-                  <h3 className="font-semibold text-base mb-3">검사 항목</h3>
-                  <div className="space-y-2">
-                    {result.lab_values.map((v, idx) => (
-                      <div key={idx} className="flex items-center justify-between py-2 border-b last:border-0">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{v.name}</p>
-                          {v.reference_range && (
-                            <p className="text-xs text-muted-foreground">
-                              정상: {v.reference_range} {v.unit}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
+              {result.lab_values.length > 0 && (
+                <Card>
+                  <CardContent className="py-4">
+                    <h3 className="font-semibold text-base mb-3">검사 항목</h3>
+                    <div className="space-y-2">
+                      {result.lab_values.map((v, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between py-2 border-b last:border-0"
+                        >
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{v.name}</p>
+                            {v.reference_range && (
+                              <p className="text-xs text-muted-foreground">
+                                정상: {v.reference_range} {v.unit}
+                              </p>
+                            )}
+                          </div>
                           <p
                             className={`text-base font-bold tabular-nums ${
                               v.status === "high" || v.status === "critical"
@@ -378,74 +436,44 @@ export default function NewLabReportPage() {
                             }`}
                           >
                             {v.value}{" "}
-                            <span className="text-xs font-normal text-muted-foreground">{v.unit}</span>
+                            <span className="text-xs font-normal text-muted-foreground">
+                              {v.unit}
+                            </span>
                           </p>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* AI Analysis */}
-              {result.ai_analysis && (
-                <Card>
-                  <CardContent className="py-4">
-                    <h3 className="font-semibold text-base mb-2">
-                      <Sparkles className="inline size-4 mr-1 text-teal-600" />
-                      AI 상세 분석
-                    </h3>
-                    <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                      {result.ai_analysis}
+                      ))}
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Recommendations */}
-              {result.ai_recommendations && result.ai_recommendations.length > 0 && (
-                <Card>
-                  <CardContent className="py-4">
-                    <h3 className="font-semibold text-base mb-3">💡 권고사항</h3>
-                    <ul className="space-y-2">
-                      {result.ai_recommendations.map((rec, idx) => (
-                        <li key={idx} className="flex gap-2 text-sm">
-                          <span className="text-teal-600 dark:text-teal-400">•</span>
-                          <span className="flex-1 text-muted-foreground">{rec}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Comparison */}
-              {result.comparison_note && (
-                <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800">
-                  <CardContent className="py-4">
-                    <h3 className="font-semibold text-base mb-2">📊 이전 회차 대비</h3>
-                    <p className="text-sm text-blue-800 dark:text-blue-300 whitespace-pre-wrap">
-                      {result.comparison_note}
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Save button */}
-              <Button
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-base font-semibold"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin mr-1" />
-                    저장 중...
-                  </>
-                ) : (
-                  "저장하기"
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setResult(null)}
+                  disabled={saving}
+                  className="flex-1 h-12"
+                >
+                  다시 분석
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex-[2] h-12 bg-teal-600 hover:bg-teal-700 text-base font-semibold"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin mr-1" />
+                      저장 중...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="size-4 mr-1" />
+                      내 기록으로 저장
+                    </>
+                  )}
+                </Button>
+              </div>
             </>
           )}
         </div>
