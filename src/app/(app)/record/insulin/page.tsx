@@ -148,33 +148,65 @@ export default function InsulinRecordPage() {
         />
       )}
 
-      {/* Dose — simple number input */}
+      {/* Dose — number input + presets */}
       <div>
         <p className="text-sm font-medium text-muted-foreground mb-2">단위 (U)</p>
-        <div className="flex items-center gap-2">
-          {[10, 15, 20, 25].map((v) => (
+        {/* Direct number input */}
+        <div className="flex items-center gap-3 mb-3">
+          <Input
+            type="number"
+            placeholder="숫자 입력"
+            value={dose}
+            onChange={(e) => setDose(e.target.value)}
+            className="flex-1 h-12 text-center text-2xl font-bold"
+            step="0.5"
+            min="0"
+          />
+          <span className="text-lg font-semibold text-muted-foreground shrink-0">U</span>
+        </div>
+        {/* Quick presets */}
+        <div className="grid grid-cols-4 gap-2 mb-2">
+          {[2, 4, 6, 8, 10, 15, 20, 25].map((v) => (
             <button
               key={v}
               onClick={() => setDose(String(v))}
               className={cn(
-                "flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors",
+                "py-2.5 rounded-xl text-sm font-semibold transition-colors",
                 dose === String(v)
                   ? "bg-blue-500 text-white"
                   : "bg-muted text-muted-foreground"
               )}
             >
-              {v}
+              {v}U
             </button>
           ))}
-          <Input
-            type="number"
-            placeholder="직접"
-            value={dose}
-            onChange={(e) => setDose(e.target.value)}
-            className="w-20 h-10 text-center font-semibold"
-            step="0.5"
-            min="0"
-          />
+        </div>
+        {/* Fine adjust +/- buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setDose(String(Math.max(0, (parseFloat(dose) || 0) - 0.5)))}
+            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+          >
+            - 0.5
+          </button>
+          <button
+            onClick={() => setDose(String(Math.max(0, (parseFloat(dose) || 0) - 1)))}
+            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+          >
+            - 1
+          </button>
+          <button
+            onClick={() => setDose(String((parseFloat(dose) || 0) + 1))}
+            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+          >
+            + 1
+          </button>
+          <button
+            onClick={() => setDose(String((parseFloat(dose) || 0) + 0.5))}
+            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+          >
+            + 0.5
+          </button>
         </div>
       </div>
 
