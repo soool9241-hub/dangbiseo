@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Camera, ImagePlus, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, X, Camera, ImagePlus, Loader2, Pencil, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +76,10 @@ export default function MealRecordPage() {
   const [photoTotalCarbs, setPhotoTotalCarbs] = useState(0);
   const [photoTotalCalories, setPhotoTotalCalories] = useState(0);
 
+  // Edit mode for analyzed foods
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<AnalyzedFood | null>(null);
+
   const filteredFoods = useMemo(() => {
     let list = foodDatabase;
     if (selectedCategory !== "전체") {
@@ -100,6 +104,12 @@ export default function MealRecordPage() {
       : photoTotalCarbs;
 
   const totalCalories = mode === "photo" ? photoTotalCalories : null;
+
+  // Recalculate totals when analyzedFoods change
+  const recalcTotals = useCallback((foods: AnalyzedFood[]) => {
+    setPhotoTotalCarbs(foods.reduce((s, f) => s + f.carbs, 0));
+    setPhotoTotalCalories(foods.reduce((s, f) => s + (f.calories || 0), 0));
+  }, []);
 
   const handlePresetClick = (carbs: number) => {
     setQuickCarbs((prev) => prev + carbs);
@@ -133,25 +143,44 @@ export default function MealRecordPage() {
   const handleRemoveAnalyzedFood = (index: number) => {
     setAnalyzedFoods((prev) => {
       const next = prev.filter((_, i) => i !== index);
-      setPhotoTotalCarbs(next.reduce((s, f) => s + f.carbs, 0));
-      setPhotoTotalCalories(next.reduce((s, f) => s + (f.calories || 0), 0));
+      recalcTotals(next);
       return next;
     });
+  };
+
+  // Edit analyzed food
+  const startEditing = (index: number) => {
+    setEditingIndex(index);
+    setEditForm({ ...analyzedFoods[index] });
+  };
+
+  const saveEditing = () => {
+    if (editingIndex === null || !editForm) return;
+    setAnalyzedFoods((prev) => {
+      const next = [...prev];
+      next[editingIndex] = editForm;
+      recalcTotals(next);
+      return next;
+    });
+    setEditingIndex(null);
+    setEditForm(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingIndex(null);
+    setEditForm(null);
   };
 
   const handlePhotoSelect = useCallback(async (file: File) => {
     setPhotoFile(file);
     setPhotoMimeType(file.type || "image/jpeg");
 
-    // Create preview
     const previewUrl = URL.createObjectURL(file);
     setPhotoPreview(previewUrl);
 
-    // Convert to base64
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = reader.result as string;
-      setPhotoBase64(base64);
+      setPhotoBase64(reader.result as string);
     };
     reader.readAsDataURL(file);
 
@@ -160,6 +189,8 @@ export default function MealRecordPage() {
     setAiDescription(null);
     setPhotoTotalCarbs(0);
     setPhotoTotalCalories(0);
+    setEditingIndex(null);
+    setEditForm(null);
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,18 +199,13 @@ export default function MealRecordPage() {
     e.target.value = "";
   };
 
-  const handleAnalyze = async () => {
-    if (!photoBase64) return;
-
+  const handleAnalyze = useCallback(async (base64: string, mime: string) => {
     setAnalyzing(true);
     try {
       const res = await fetch("/api/meal/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: photoBase64,
-          mimeType: photoMimeType,
-        }),
+        body: JSON.stringify({ image: base64, mimeType: mime }),
       });
 
       if (!res.ok) {
@@ -209,7 +235,15 @@ export default function MealRecordPage() {
     } finally {
       setAnalyzing(false);
     }
-  };
+  }, []);
+
+  // Auto-analyze when photo is selected
+  useEffect(() => {
+    if (photoBase64 && analyzedFoods.length === 0 && !analyzing) {
+      handleAnalyze(photoBase64, photoMimeType);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoBase64]);
 
   const uploadPhotoToStorage = async (): Promise<string | null> => {
     if (!photoFile || !user || !isSupabaseConfigured()) return null;
@@ -290,6 +324,7 @@ export default function MealRecordPage() {
 
     const noteText = [
       aiDescription ? `[AI] ${aiDescription}` : null,
+      analyzedFoods.length > 0 ? analyzedFoods.map((f) => `${f.name} ${f.serving_size} (${f.carbs}g)`).join(", ") : null,
       note.trim() || null,
     ]
       .filter(Boolean)
@@ -438,6 +473,12 @@ export default function MealRecordPage() {
                   alt="식사 사진"
                   className="w-full max-h-64 object-cover"
                 />
+                {analyzing && (
+                  <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="size-8 text-white animate-spin" />
+                    <span className="text-white text-sm font-medium">AI 분석 중...</span>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     setPhotoPreview(null);
@@ -447,6 +488,8 @@ export default function MealRecordPage() {
                     setAiDescription(null);
                     setPhotoTotalCarbs(0);
                     setPhotoTotalCalories(0);
+                    setEditingIndex(null);
+                    setEditForm(null);
                   }}
                   className="absolute top-2 right-2 size-8 rounded-full bg-black/50 text-white flex items-center justify-center"
                 >
@@ -454,71 +497,130 @@ export default function MealRecordPage() {
                 </button>
               </div>
 
-              {/* Analyze button */}
-              {analyzedFoods.length === 0 && (
-                <Button
-                  onClick={handleAnalyze}
-                  disabled={analyzing || !photoBase64}
-                  className="w-full h-11 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium"
-                >
-                  {analyzing ? (
-                    <>
-                      <Loader2 className="size-4 mr-2 animate-spin" />
-                      AI 분석 중...
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="size-4 mr-2" />
-                      음식 분석하기
-                    </>
-                  )}
-                </Button>
-              )}
-
               {/* AI Description */}
               {aiDescription && (
-                <div className="mt-3 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-sm text-orange-800 dark:text-orange-200">
+                <div className="px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-sm text-orange-800 dark:text-orange-200 mb-3">
                   {aiDescription}
                 </div>
               )}
 
-              {/* Analyzed foods list */}
+              {/* Analyzed foods list - editable */}
               {analyzedFoods.length > 0 && (
-                <div className="mt-4 space-y-1.5">
-                  <label className="text-sm font-medium text-muted-foreground">
-                    분석된 음식
-                  </label>
-                  {analyzedFoods.map((food, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">{food.name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          {food.serving_size}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
-                          <span className="text-sm font-semibold text-orange-600 dark:text-orange-400">
-                            {food.carbs}g
-                          </span>
-                          {food.calories != null && (
-                            <span className="text-xs text-muted-foreground ml-1">
-                              {food.calories}kcal
-                            </span>
-                          )}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-muted-foreground">
+                      분석된 음식
+                    </label>
+                    <span className="text-xs text-muted-foreground">
+                      탭하여 수정 가능
+                    </span>
+                  </div>
+                  {analyzedFoods.map((food, i) =>
+                    editingIndex === i && editForm ? (
+                      // Edit mode
+                      <div key={i} className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 space-y-2">
+                        <div className="flex gap-2">
+                          <Input
+                            value={editForm.name}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            className="text-sm h-8"
+                            placeholder="음식 이름"
+                          />
+                          <Input
+                            value={editForm.serving_size}
+                            onChange={(e) => setEditForm({ ...editForm, serving_size: e.target.value })}
+                            className="text-sm h-8 w-28"
+                            placeholder="양"
+                          />
                         </div>
-                        <button
-                          onClick={() => handleRemoveAnalyzedFood(i)}
-                          className="size-6 rounded-full hover:bg-destructive/10 flex items-center justify-center"
-                        >
-                          <X className="size-3.5 text-destructive" />
-                        </button>
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-muted-foreground">탄수화물(g)</label>
+                            <Input
+                              type="number"
+                              value={editForm.carbs}
+                              onChange={(e) => setEditForm({ ...editForm, carbs: Number(e.target.value) || 0 })}
+                              className="text-sm h-8"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-muted-foreground">칼로리</label>
+                            <Input
+                              type="number"
+                              value={editForm.calories || ""}
+                              onChange={(e) => setEditForm({ ...editForm, calories: Number(e.target.value) || null })}
+                              className="text-sm h-8"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-muted-foreground">단백질(g)</label>
+                            <Input
+                              type="number"
+                              value={editForm.protein || ""}
+                              onChange={(e) => setEditForm({ ...editForm, protein: Number(e.target.value) || null })}
+                              className="text-sm h-8"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-muted-foreground">지방(g)</label>
+                            <Input
+                              type="number"
+                              value={editForm.fat || ""}
+                              onChange={(e) => setEditForm({ ...editForm, fat: Number(e.target.value) || null })}
+                              className="text-sm h-8"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button size="sm" variant="ghost" onClick={cancelEditing} className="h-7 text-xs">
+                            취소
+                          </Button>
+                          <Button size="sm" onClick={saveEditing} className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white">
+                            <Check className="size-3 mr-1" />
+                            저장
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ) : (
+                      // Display mode
+                      <div
+                        key={i}
+                        className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted hover:bg-muted/80 cursor-pointer transition-colors"
+                        onClick={() => startEditing(i)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium">{food.name}</span>
+                            <Pencil className="size-3 text-muted-foreground" />
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {food.serving_size}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right">
+                            <span className="text-sm font-semibold text-orange-600 dark:text-orange-400">
+                              {food.carbs}g
+                            </span>
+                            {food.calories != null && (
+                              <span className="text-xs text-muted-foreground ml-1">
+                                {food.calories}kcal
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveAnalyzedFood(i);
+                            }}
+                            className="size-6 rounded-full hover:bg-destructive/10 flex items-center justify-center"
+                          >
+                            <X className="size-3.5 text-destructive" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  )}
 
                   {/* Re-take or add from album */}
                   <div className="flex gap-2 pt-2">
@@ -539,6 +641,18 @@ export default function MealRecordPage() {
                     >
                       <ImagePlus className="size-3 mr-1" />
                       다른 사진
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (photoBase64) handleAnalyze(photoBase64, photoMimeType);
+                      }}
+                      disabled={analyzing}
+                      className="text-xs"
+                    >
+                      <Loader2 className={cn("size-3 mr-1", analyzing && "animate-spin")} />
+                      재분석
                     </Button>
                   </div>
                 </div>

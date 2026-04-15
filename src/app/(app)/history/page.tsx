@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
 import { ko } from "date-fns/locale/ko";
 import {
-  Droplet, Syringe, UtensilsCrossed, Dumbbell, SmilePlus, Filter,
+  Droplet, Syringe, UtensilsCrossed, Dumbbell, SmilePlus, Filter, ImageIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,13 @@ const typeConfig: Record<RecordType, { label: string; icon: typeof Droplet; colo
   mood: { label: "기분", icon: SmilePlus, color: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400" },
 };
 
+const mealTypeLabels: Record<string, string> = {
+  breakfast: "아침",
+  lunch: "점심",
+  dinner: "저녁",
+  snack: "간식",
+};
+
 const moodEmojis: Record<string, string> = {
   great: "😄", good: "🙂", neutral: "😐", bad: "😟", terrible: "😢",
 };
@@ -32,6 +40,9 @@ interface TimelineItem {
   primaryValue: string;
   secondaryValue?: string;
   glucoseColor?: string;
+  photoUrl?: string | null;
+  mealType?: string;
+  note?: string | null;
 }
 
 function getGlucoseColor(value: number, min: number, max: number): string {
@@ -97,6 +108,9 @@ export default function HistoryPage() {
           timestamp: new Date(r.eaten_at),
           primaryValue: `${r.total_carbs}g 탄수화물`,
           secondaryValue: r.total_calories ? `${r.total_calories}kcal` : undefined,
+          photoUrl: r.photo_url,
+          mealType: r.meal_type,
+          note: r.note,
         })
       );
     }
@@ -144,9 +158,25 @@ export default function HistoryPage() {
     return groups;
   }, [timeline]);
 
+  // Count meal photos
+  const photoCount = mealRecords.filter((r) => r.photo_url).length;
+
   return (
     <div className="space-y-4 py-6">
-      <h1 className="text-2xl font-bold">기록 히스토리</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">기록 히스토리</h1>
+        {photoCount > 0 && (
+          <Link href="/meal-gallery">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <ImageIcon className="size-3.5" />
+              식단 갤러리
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5">
+                {photoCount}
+              </Badge>
+            </Button>
+          </Link>
+        )}
+      </div>
 
       {/* Filter buttons */}
       <div className="flex flex-wrap gap-2">
@@ -181,13 +211,26 @@ export default function HistoryPage() {
                 return (
                   <Card key={item.id}>
                     <CardContent className="flex items-center gap-3 py-3">
-                      <div className={`flex size-10 items-center justify-center rounded-full ${cfg.color}`}>
-                        <Icon className="size-5" />
-                      </div>
+                      {/* Photo thumbnail for meals */}
+                      {item.type === "meal" && item.photoUrl ? (
+                        <div className="size-12 rounded-xl overflow-hidden shrink-0 bg-muted">
+                          <img
+                            src={item.photoUrl}
+                            alt="식사 사진"
+                            className="size-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className={`flex size-10 items-center justify-center rounded-full shrink-0 ${cfg.color}`}>
+                          <Icon className="size-5" />
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className={cfg.color}>
-                            {cfg.label}
+                            {item.type === "meal" && item.mealType
+                              ? `${cfg.label} · ${mealTypeLabels[item.mealType] || item.mealType}`
+                              : cfg.label}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
                             {formatDistanceToNow(item.timestamp, { locale: ko, addSuffix: true })}
@@ -198,6 +241,11 @@ export default function HistoryPage() {
                         </p>
                         {item.secondaryValue && (
                           <p className="text-xs text-muted-foreground">{item.secondaryValue}</p>
+                        )}
+                        {item.type === "meal" && item.note && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                            {item.note.replace(/^\[AI\] /, "")}
+                          </p>
                         )}
                       </div>
                     </CardContent>
