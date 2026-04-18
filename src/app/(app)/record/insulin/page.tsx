@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
+import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import type { InsulinType, InjectionSite } from "@/types/database";
 import { cn } from "@/lib/utils";
 
@@ -98,6 +99,29 @@ export default function InsulinRecordPage() {
         </Button>
         <h1 className="text-xl font-bold">인슐린 기록</h1>
       </div>
+
+      {/* AI Text Input */}
+      <TextRecordInput
+        type="insulin"
+        placeholder="예: 노보래피드 4단위 배에 맞음"
+        examples={["노보래피드 4단위", "트레시바 10단위 허벅지", "휴마로그 6단위 배"]}
+        onParsed={(data) => {
+          const d = data as { insulin_name?: string; insulin_type?: string; dose?: number; injection_site?: string };
+          if (d.insulin_name) {
+            setSelectedName(d.insulin_name);
+            setIsCustom(false);
+            const found = insulinCategories.flatMap(c => c.examples).find(e => e.name === d.insulin_name);
+            if (!found) {
+              setIsCustom(true);
+              setCustomName(d.insulin_name);
+            }
+          }
+          if (d.insulin_type) setSelectedType(d.insulin_type as InsulinType);
+          if (d.dose) setDose(String(d.dose));
+          if (d.injection_site) setSite(d.injection_site as InjectionSite);
+          toast.success("텍스트에서 인슐린 정보를 인식했어요!");
+        }}
+      />
 
       {/* Insulin type + name selection */}
       {insulinCategories.map((cat) => (

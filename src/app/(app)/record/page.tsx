@@ -8,6 +8,7 @@ import {
   Dumbbell,
   Heart,
   FileText,
+  Sparkles,
 } from "lucide-react";
 import { useRecordsStore } from "@/stores/records-store";
 import { isToday } from "date-fns";
@@ -81,6 +82,27 @@ export default function RecordHubPage() {
   return (
     <div className="py-6 space-y-6">
       <h1 className="text-2xl font-bold">기록하기</h1>
+
+      {/* Smart Record - AI Text Input */}
+      <Link
+        href="/record/smart"
+        className="block rounded-2xl p-5 bg-gradient-to-br from-violet-500 to-purple-600 text-white active:scale-[0.98] transition-transform"
+      >
+        <div className="flex items-center gap-4">
+          <div className="bg-white/20 rounded-full p-3">
+            <Sparkles className="size-7" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-base">종합 기록</span>
+              <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full font-semibold">AI</span>
+            </div>
+            <p className="text-xs text-white/90 mt-0.5">
+              텍스트 한 줄로 모든 기록을 한번에!
+            </p>
+          </div>
+        </div>
+      </Link>
 
       <div className="grid grid-cols-2 gap-3">
         {recordTypes.map((rt) => {

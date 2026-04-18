@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
+import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import { foodDatabase, foodCategories } from "@/data/foods";
 import type { MealType, MealFoodItem, FoodCategory } from "@/types/database";
 import { cn } from "@/lib/utils";
@@ -355,6 +356,25 @@ export default function MealRecordPage() {
           <ArrowLeft className="size-5" />
         </Button>
         <h1 className="text-xl font-bold">식단 기록</h1>
+      </div>
+
+      {/* AI Text Input */}
+      <div className="mb-4">
+        <TextRecordInput
+          type="meal"
+          placeholder="예: 점심에 김치찌개랑 밥 먹음"
+          examples={["밥이랑 된장찌개", "라면 먹었어", "삼겹살 2인분", "카페라떼 한잔"]}
+          onParsed={(data) => {
+            const d = data as { meal_type?: string; total_carbs?: number; total_calories?: number; note?: string };
+            if (d.meal_type) setMealType(d.meal_type as MealType);
+            if (d.total_carbs) {
+              setQuickCarbs(d.total_carbs as number);
+            }
+            if (d.note) setNote(d.note);
+            setMode("quick");
+            toast.success("텍스트에서 식단 정보를 인식했어요!");
+          }}
+        />
       </div>
 
       {/* Meal type */}

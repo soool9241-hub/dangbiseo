@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { GlucoseRangeBadge } from "@/components/shared/GlucoseRangeBadge";
+import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import type { GlucoseTiming, GlucoseSource } from "@/types/database";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,23 @@ export default function GlucoseRecordPage() {
           <ArrowLeft className="size-5" />
         </Button>
         <h1 className="text-xl font-bold">혈당 기록</h1>
+      </div>
+
+      {/* AI Text Input */}
+      <div className="mb-4">
+        <TextRecordInput
+          type="glucose"
+          placeholder="예: 공복혈당 120"
+          examples={["공복혈당 110", "식후 180", "취침전 혈당 95"]}
+          onParsed={(data) => {
+            const d = data as { value?: number; timing?: string; source?: string; note?: string };
+            if (d.value) setDisplay(String(d.value));
+            if (d.timing) setTiming(d.timing as GlucoseTiming);
+            if (d.source) setSource(d.source as GlucoseSource);
+            if (d.note) setNote(d.note);
+            toast.success("텍스트에서 혈당 정보를 인식했어요!");
+          }}
+        />
       </div>
 
       {/* Display */}

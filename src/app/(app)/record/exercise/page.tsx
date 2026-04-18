@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NumberStepper } from "@/components/shared/NumberStepper";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
+import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import type {
   ExerciseType,
   ExerciseIntensity,
@@ -118,6 +119,26 @@ export default function ExerciseRecordPage() {
         </Button>
         <h1 className="text-xl font-bold">운동 기록</h1>
       </div>
+
+      {/* AI Text Input */}
+      <TextRecordInput
+        type="exercise"
+        placeholder="예: 30분 걸었어"
+        examples={["30분 걸었어", "헬스 1시간 격렬", "수영 45분", "자전거 20분"]}
+        onParsed={(data) => {
+          const d = data as { exercise_type?: string; duration_minutes?: number; intensity?: string };
+          if (d.exercise_type) {
+            const typeMap: Record<string, ExerciseType> = {
+              weight: "웨이트", cardio: "유산소", swimming: "수영", dance: "댄스",
+              martial_arts: "격투기", yoga: "요가", walking: "걷기", cycling: "자전거", other: "기타",
+            };
+            setExerciseType(typeMap[d.exercise_type] || "기타");
+          }
+          if (d.duration_minutes) setDuration(d.duration_minutes);
+          if (d.intensity) setIntensity(d.intensity as ExerciseIntensity);
+          toast.success("텍스트에서 운동 정보를 인식했어요!");
+        }}
+      />
 
       {/* Exercise type grid */}
       <div className="space-y-2 mb-6">

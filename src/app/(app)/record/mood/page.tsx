@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
+import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import type { MoodLevel } from "@/types/database";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,28 @@ export default function MoodRecordPage() {
           <ArrowLeft className="size-5" />
         </Button>
         <h1 className="text-xl font-bold">기분 기록</h1>
+      </div>
+
+      {/* AI Text Input */}
+      <div className="mb-4">
+        <TextRecordInput
+          type="mood"
+          placeholder="예: 오늘 기분 좋아 스트레스 없음"
+          examples={["기분 좋아", "컨디션 별로 스트레스 많음", "우울하고 피곤해"]}
+          onParsed={(data) => {
+            const d = data as { mood?: string; stress_level?: number; factors?: string[] };
+            if (d.mood) setMood(d.mood as MoodLevel);
+            if (d.stress_level) setStressLevel(d.stress_level);
+            if (d.factors) {
+              const factorMap: Record<string, string> = {
+                work: "업무", sleep: "수면", exercise: "운동", relationship: "관계",
+                food: "음식", weather: "날씨", glucose: "혈당", other: "기타",
+              };
+              setSelectedFactors(d.factors.map(f => factorMap[f] || f));
+            }
+            toast.success("텍스트에서 기분 정보를 인식했어요!");
+          }}
+        />
       </div>
 
       {/* Mood selector */}
