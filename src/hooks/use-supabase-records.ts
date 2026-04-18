@@ -1,64 +1,104 @@
 'use client';
 
-import { useEffect, useCallback, useMemo } from 'react';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useEffect, useCallback, useRef } from 'react';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useRecordsStore } from '@/stores/records-store';
 
 export function useSupabaseSync() {
-  const { user } = useAuth();
+  const { user, supabase } = useAuth();
   const store = useRecordsStore();
-  const supabase = useMemo(() => createClient(), []);
   const configured = isSupabaseConfigured();
+  const fetchedRef = useRef(false);
 
   // Fetch all data from Supabase on mount / user change
   const fetchAll = useCallback(async () => {
     if (!user || !configured) {
+      console.log('[fetchAll] Skipped: user=', !!user, 'configured=', configured);
       store.setLoading(false);
       return;
     }
 
+    console.log('[fetchAll] Fetching all records for user:', user.id);
     store.setLoading(true);
 
-    const [
-      { data: profile },
-      { data: glucose },
-      { data: insulin },
-      { data: meals },
-      { data: exercise },
-      { data: mood },
-      { data: hba1c },
-    ] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
-      supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false }),
-      supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false }),
-      supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false }),
-      supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false }),
-      supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
-      supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false }),
-    ]);
+    try {
+      const [
+        profileRes,
+        glucoseRes,
+        insulinRes,
+        mealsRes,
+        exerciseRes,
+        moodRes,
+        hba1cRes,
+      ] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false }),
+        supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false }),
+        supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false }),
+        supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false }),
+        supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
+        supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false }),
+      ]);
 
-    if (profile) {
-      store.setProfile({
-        ...profile,
-        preferred_insulins: profile.preferred_insulins || [],
+      // Log errors for debugging
+      if (profileRes.error) console.error('[fetchAll] Profile error:', profileRes.error);
+      if (glucoseRes.error) console.error('[fetchAll] Glucose error:', glucoseRes.error);
+      if (insulinRes.error) console.error('[fetchAll] Insulin error:', insulinRes.error);
+      if (mealsRes.error) console.error('[fetchAll] Meals error:', mealsRes.error);
+      if (exerciseRes.error) console.error('[fetchAll] Exercise error:', exerciseRes.error);
+      if (moodRes.error) console.error('[fetchAll] Mood error:', moodRes.error);
+      if (hba1cRes.error) console.error('[fetchAll] HbA1c error:', hba1cRes.error);
+
+      if (profileRes.data) {
+        store.setProfile({
+          ...profileRes.data,
+          preferred_insulins: profileRes.data.preferred_insulins || [],
+        });
+      }
+
+      console.log('[fetchAll] Results - glucose:', glucoseRes.data?.length ?? 0,
+        'insulin:', insulinRes.data?.length ?? 0,
+        'meals:', mealsRes.data?.length ?? 0,
+        'exercise:', exerciseRes.data?.length ?? 0,
+        'mood:', moodRes.data?.length ?? 0,
+        'hba1c:', hba1cRes.data?.length ?? 0);
+
+      useRecordsStore.setState({
+        glucoseRecords: glucoseRes.data || [],
+        insulinRecords: insulinRes.data || [],
+        mealRecords: (mealsRes.data || []).map(m => ({ ...m, items: [] })),
+        exerciseRecords: exerciseRes.data || [],
+        moodRecords: moodRes.data || [],
+        hba1cRecords: hba1cRes.data || [],
+        loading: false,
       });
-    }
 
-    useRecordsStore.setState({
-      glucoseRecords: glucose || [],
-      insulinRecords: insulin || [],
-      mealRecords: (meals || []).map(m => ({ ...m, items: [] })),
-      exerciseRecords: exercise || [],
-      moodRecords: mood || [],
-      hba1cRecords: hba1c || [],
-      loading: false,
-    });
+      fetchedRef.current = true;
+    } catch (err) {
+      console.error('[fetchAll] Unexpected error:', err);
+      store.setLoading(false);
+    }
   }, [user, configured, supabase, store]);
 
+  // Run fetchAll when user changes
   useEffect(() => {
+    fetchedRef.current = false;
     fetchAll();
-  }, [user]);
+  }, [fetchAll]);
+
+  // Retry fetch if user is available but data wasn't loaded
+  useEffect(() => {
+    if (user && configured && !fetchedRef.current) {
+      const timer = setTimeout(() => {
+        if (!fetchedRef.current) {
+          console.log('[fetchAll] Retry: data not loaded yet');
+          fetchAll();
+        }
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [user, configured, fetchAll]);
 
   // Save to Supabase, then refetch to sync
   const addGlucoseRecord = useCallback(async (record: { value: number; measured_at: string; source: string; timing: string; note: string | null }) => {
@@ -66,6 +106,7 @@ export function useSupabaseSync() {
       console.error('[addGlucoseRecord] No user authenticated');
       throw new Error('로그인이 필요합니다');
     }
+    console.log('[addGlucoseRecord] Inserting:', record);
     const { error } = await supabase.from('glucose_records').insert({
       user_id: user.id,
       value: record.value,
@@ -78,9 +119,16 @@ export function useSupabaseSync() {
       console.error('[addGlucoseRecord] Insert error:', error);
       throw new Error(`혈당 기록 저장 실패: ${error.message}`);
     }
-    // Refetch glucose records
-    const { data } = await supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false });
-    useRecordsStore.setState({ glucoseRecords: data || [] });
+    console.log('[addGlucoseRecord] Insert success, refetching...');
+    // Refetch glucose records - don't wipe on error
+    const { data, error: fetchError } = await supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false });
+    if (fetchError) {
+      console.error('[addGlucoseRecord] Refetch error:', fetchError);
+      // Don't wipe existing data - just log the error
+    } else {
+      console.log('[addGlucoseRecord] Refetched', data?.length, 'records');
+      useRecordsStore.setState({ glucoseRecords: data || [] });
+    }
   }, [user, supabase]);
 
   const addInsulinRecord = useCallback(async (record: { insulin_name: string; insulin_type: string; dose: number; injected_at: string; injection_site: string; note: string | null }) => {
@@ -101,8 +149,10 @@ export function useSupabaseSync() {
       console.error('[addInsulinRecord] Insert error:', error);
       throw new Error(`인슐린 기록 저장 실패: ${error.message}`);
     }
-    const { data } = await supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false });
-    useRecordsStore.setState({ insulinRecords: data || [] });
+    const { data, error: fetchError } = await supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false });
+    if (!fetchError) {
+      useRecordsStore.setState({ insulinRecords: data || [] });
+    }
   }, [user, supabase]);
 
   const addMealRecord = useCallback(async (record: { meal_type: string; eaten_at: string; total_carbs: number; total_calories: number | null; photo_url: string | null; note: string | null }) => {
@@ -123,8 +173,10 @@ export function useSupabaseSync() {
       console.error('[addMealRecord] Insert error:', error);
       throw new Error(`식단 기록 저장 실패: ${error.message}`);
     }
-    const { data } = await supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false });
-    useRecordsStore.setState({ mealRecords: (data || []).map(m => ({ ...m, items: [] })) });
+    const { data, error: fetchError } = await supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false });
+    if (!fetchError) {
+      useRecordsStore.setState({ mealRecords: (data || []).map(m => ({ ...m, items: [] })) });
+    }
   }, [user, supabase]);
 
   const addExerciseRecord = useCallback(async (record: { exercise_type: string; duration_minutes: number; intensity: string; steps: number | null; calories_burned: number | null; started_at: string; glucose_before: number | null; glucose_after: number | null; carb_supplement: number | null; note: string | null }) => {
@@ -149,8 +201,10 @@ export function useSupabaseSync() {
       console.error('[addExerciseRecord] Insert error:', error);
       throw new Error(`운동 기록 저장 실패: ${error.message}`);
     }
-    const { data } = await supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false });
-    useRecordsStore.setState({ exerciseRecords: data || [] });
+    const { data, error: fetchError } = await supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false });
+    if (!fetchError) {
+      useRecordsStore.setState({ exerciseRecords: data || [] });
+    }
   }, [user, supabase]);
 
   const addMoodRecord = useCallback(async (record: { mood: string; stress_level: number; factors: string[]; note: string | null; recorded_at: string }) => {
@@ -170,8 +224,10 @@ export function useSupabaseSync() {
       console.error('[addMoodRecord] Insert error:', error);
       throw new Error(`기분 기록 저장 실패: ${error.message}`);
     }
-    const { data } = await supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false });
-    useRecordsStore.setState({ moodRecords: data || [] });
+    const { data, error: fetchError } = await supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false });
+    if (!fetchError) {
+      useRecordsStore.setState({ moodRecords: data || [] });
+    }
   }, [user, supabase]);
 
   const addHbA1cRecord = useCallback(async (record: { value: number; tested_at: string; lab_name: string | null; note: string | null }) => {
@@ -190,8 +246,10 @@ export function useSupabaseSync() {
       console.error('[addHbA1cRecord] Insert error:', error);
       throw new Error(`HbA1c 기록 저장 실패: ${error.message}`);
     }
-    const { data } = await supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false });
-    useRecordsStore.setState({ hba1cRecords: data || [] });
+    const { data, error: fetchError } = await supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false });
+    if (!fetchError) {
+      useRecordsStore.setState({ hba1cRecords: data || [] });
+    }
   }, [user, supabase]);
 
   const updateProfile = useCallback(async (updates: Partial<typeof store.profile>) => {
