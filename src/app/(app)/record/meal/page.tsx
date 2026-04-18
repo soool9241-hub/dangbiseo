@@ -311,6 +311,8 @@ export default function MealRecordPage() {
     }
   };
 
+  const [submitting, setSubmitting] = useState(false);
+
   const handleSubmit = async () => {
     if (totalCarbs <= 0 && mode !== "photo") {
       toast.error("탄수화물량을 입력해 주세요");
@@ -322,57 +324,64 @@ export default function MealRecordPage() {
       return;
     }
 
-    // Upload photo to Supabase Storage
-    let photoUrl: string | null = null;
-    if (photoFile) {
-      toast.loading("사진 저장 중...", { id: "photo-upload" });
-      photoUrl = await uploadPhotoToStorage();
-      toast.dismiss("photo-upload");
-    }
+    setSubmitting(true);
+    try {
+      // Upload photo to Supabase Storage
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        toast.loading("사진 저장 중...", { id: "photo-upload" });
+        photoUrl = await uploadPhotoToStorage();
+        toast.dismiss("photo-upload");
+      }
 
-    const items: MealFoodItem[] =
-      mode === "photo"
-        ? analyzedFoods.map((f, i) => ({
-            id: `item-${Date.now()}-${i}`,
-            meal_id: "",
-            food_id: null,
-            user_food_id: null,
-            food_name: `${f.name} (${f.serving_size})`,
-            quantity: 1,
-            carbs: f.carbs,
-          }))
-        : mode === "quick"
-        ? [
-            {
-              id: `item-${Date.now()}`,
+      const items: MealFoodItem[] =
+        mode === "photo"
+          ? analyzedFoods.map((f, i) => ({
+              id: `item-${Date.now()}-${i}`,
               meal_id: "",
               food_id: null,
               user_food_id: null,
-              food_name: "빠른 입력",
+              food_name: `${f.name} (${f.serving_size})`,
               quantity: 1,
-              carbs: quickCarbs,
-            },
-          ]
-        : addedItems;
+              carbs: f.carbs,
+            }))
+          : mode === "quick"
+          ? [
+              {
+                id: `item-${Date.now()}`,
+                meal_id: "",
+                food_id: null,
+                user_food_id: null,
+                food_name: "빠른 입력",
+                quantity: 1,
+                carbs: quickCarbs,
+              },
+            ]
+          : addedItems;
 
-    const noteText = [
-      aiDescription ? `[AI] ${aiDescription}` : null,
-      analyzedFoods.length > 0 ? analyzedFoods.map((f) => `${f.name} ${f.serving_size} (${f.carbs}g)`).join(", ") : null,
-      note.trim() || null,
-    ]
-      .filter(Boolean)
-      .join("\n");
+      const noteText = [
+        aiDescription ? `[AI] ${aiDescription}` : null,
+        analyzedFoods.length > 0 ? analyzedFoods.map((f) => `${f.name} ${f.serving_size} (${f.carbs}g)`).join(", ") : null,
+        note.trim() || null,
+      ]
+        .filter(Boolean)
+        .join("\n");
 
-    addMealRecord({
-      meal_type: mealType,
-      eaten_at: new Date(recordTime).toISOString(),
-      total_carbs: totalCarbs,
-      total_calories: totalCalories,
-      photo_url: photoUrl,
-      note: noteText || null,
-    });
-    toast.success("식단이 기록되었습니다");
-    router.back();
+      await addMealRecord({
+        meal_type: mealType,
+        eaten_at: new Date(recordTime).toISOString(),
+        total_carbs: totalCarbs,
+        total_calories: totalCalories,
+        photo_url: photoUrl,
+        note: noteText || null,
+      });
+      toast.success("식단이 기록되었습니다");
+      router.back();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "저장에 실패했습니다");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -909,12 +918,13 @@ export default function MealRecordPage() {
       <Button
         onClick={handleSubmit}
         disabled={
+          submitting ||
           (mode === "photo" && analyzedFoods.length === 0) ||
           (mode !== "photo" && totalCarbs <= 0)
         }
         className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white text-base font-semibold rounded-xl mt-auto"
       >
-        기록하기
+        {submitting ? "저장 중..." : "기록하기"}
       </Button>
     </div>
   );

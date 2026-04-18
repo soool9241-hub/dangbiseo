@@ -53,20 +53,29 @@ export default function MoodRecordPage() {
     );
   };
 
-  const handleSubmit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
     if (!mood) {
       toast.error("기분을 선택해 주세요");
       return;
     }
-    addMoodRecord({
-      mood,
-      stress_level: stressLevel,
-      factors: selectedFactors,
-      note: note.trim() || null,
-      recorded_at: new Date(recordTime).toISOString(),
-    });
-    toast.success("기분이 기록되었습니다");
-    router.back();
+    setSubmitting(true);
+    try {
+      await addMoodRecord({
+        mood,
+        stress_level: stressLevel,
+        factors: selectedFactors,
+        note: note.trim() || null,
+        recorded_at: new Date(recordTime).toISOString(),
+      });
+      toast.success("기분이 기록되었습니다");
+      router.back();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "저장에 실패했습니다");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -198,10 +207,10 @@ export default function MoodRecordPage() {
       {/* Submit */}
       <Button
         onClick={handleSubmit}
-        disabled={!mood}
+        disabled={!mood || submitting}
         className="w-full h-12 bg-pink-500 hover:bg-pink-600 text-white text-base font-semibold rounded-xl mt-auto"
       >
-        기록하기
+        {submitting ? "저장 중..." : "기록하기"}
       </Button>
     </div>
   );

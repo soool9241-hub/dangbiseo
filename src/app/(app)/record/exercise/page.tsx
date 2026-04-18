@@ -88,21 +88,30 @@ export default function ExerciseRecordPage() {
 
   const guideText = getGuideText(exerciseType, intensity, duration);
 
-  const handleSubmit = () => {
-    addExerciseRecord({
-      exercise_type: exerciseType,
-      duration_minutes: duration,
-      intensity,
-      steps: null,
-      calories_burned: null,
-      started_at: new Date(recordTime).toISOString(),
-      glucose_before: glucoseBefore ? parseInt(glucoseBefore, 10) : null,
-      glucose_after: glucoseAfter ? parseInt(glucoseAfter, 10) : null,
-      carb_supplement: carbSupplement > 0 ? carbSupplement : null,
-      note: note.trim() || null,
-    });
-    toast.success("운동이 기록되었습니다");
-    router.back();
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await addExerciseRecord({
+        exercise_type: exerciseType,
+        duration_minutes: duration,
+        intensity,
+        steps: null,
+        calories_burned: null,
+        started_at: new Date(recordTime).toISOString(),
+        glucose_before: glucoseBefore ? parseInt(glucoseBefore, 10) : null,
+        glucose_after: glucoseAfter ? parseInt(glucoseAfter, 10) : null,
+        carb_supplement: carbSupplement > 0 ? carbSupplement : null,
+        note: note.trim() || null,
+      });
+      toast.success("운동이 기록되었습니다");
+      router.back();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "저장에 실패했습니다");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -287,9 +296,10 @@ export default function ExerciseRecordPage() {
       {/* Submit */}
       <Button
         onClick={handleSubmit}
+        disabled={submitting}
         className="w-full h-12 bg-green-500 hover:bg-green-600 text-white text-base font-semibold rounded-xl mt-auto"
       >
-        기록하기
+        {submitting ? "저장 중..." : "기록하기"}
       </Button>
     </div>
   );

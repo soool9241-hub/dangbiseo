@@ -67,7 +67,9 @@ export default function InsulinRecordPage() {
     setIsCustom(false);
   };
 
-  const handleSubmit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
     const name = isCustom ? customName.trim() : selectedName;
     if (!name) {
       toast.error("인슐린을 선택해 주세요");
@@ -78,16 +80,23 @@ export default function InsulinRecordPage() {
       toast.error("단위를 입력해 주세요");
       return;
     }
-    addInsulinRecord({
-      insulin_name: name,
-      insulin_type: selectedType,
-      dose: doseVal,
-      injected_at: new Date(recordTime).toISOString(),
-      injection_site: site,
-      note: null,
-    });
-    toast.success("인슐린이 기록되었습니다");
-    router.back();
+    setSubmitting(true);
+    try {
+      await addInsulinRecord({
+        insulin_name: name,
+        insulin_type: selectedType,
+        dose: doseVal,
+        injected_at: new Date(recordTime).toISOString(),
+        injection_site: site,
+        note: null,
+      });
+      toast.success("인슐린이 기록되었습니다");
+      router.back();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "저장에 실패했습니다");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -269,10 +278,10 @@ export default function InsulinRecordPage() {
       {/* Submit */}
       <Button
         onClick={handleSubmit}
-        disabled={!dose}
+        disabled={!dose || submitting}
         className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white text-base font-semibold rounded-xl"
       >
-        기록하기
+        {submitting ? "저장 중..." : "기록하기"}
       </Button>
     </div>
   );

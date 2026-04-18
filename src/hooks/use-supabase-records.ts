@@ -62,8 +62,11 @@ export function useSupabaseSync() {
 
   // Save to Supabase, then refetch to sync
   const addGlucoseRecord = useCallback(async (record: { value: number; measured_at: string; source: string; timing: string; note: string | null }) => {
-    if (!user) return;
-    await supabase.from('glucose_records').insert({
+    if (!user) {
+      console.error('[addGlucoseRecord] No user authenticated');
+      throw new Error('로그인이 필요합니다');
+    }
+    const { error } = await supabase.from('glucose_records').insert({
       user_id: user.id,
       value: record.value,
       measured_at: record.measured_at,
@@ -71,14 +74,21 @@ export function useSupabaseSync() {
       timing: record.timing,
       note: record.note,
     });
+    if (error) {
+      console.error('[addGlucoseRecord] Insert error:', error);
+      throw new Error(`혈당 기록 저장 실패: ${error.message}`);
+    }
     // Refetch glucose records
     const { data } = await supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false });
     useRecordsStore.setState({ glucoseRecords: data || [] });
   }, [user, supabase]);
 
   const addInsulinRecord = useCallback(async (record: { insulin_name: string; insulin_type: string; dose: number; injected_at: string; injection_site: string; note: string | null }) => {
-    if (!user) return;
-    await supabase.from('insulin_records').insert({
+    if (!user) {
+      console.error('[addInsulinRecord] No user authenticated');
+      throw new Error('로그인이 필요합니다');
+    }
+    const { error } = await supabase.from('insulin_records').insert({
       user_id: user.id,
       insulin_name: record.insulin_name,
       insulin_type: record.insulin_type,
@@ -87,13 +97,20 @@ export function useSupabaseSync() {
       injection_site: record.injection_site,
       note: record.note,
     });
+    if (error) {
+      console.error('[addInsulinRecord] Insert error:', error);
+      throw new Error(`인슐린 기록 저장 실패: ${error.message}`);
+    }
     const { data } = await supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false });
     useRecordsStore.setState({ insulinRecords: data || [] });
   }, [user, supabase]);
 
   const addMealRecord = useCallback(async (record: { meal_type: string; eaten_at: string; total_carbs: number; total_calories: number | null; photo_url: string | null; note: string | null }) => {
-    if (!user) return;
-    await supabase.from('meal_records').insert({
+    if (!user) {
+      console.error('[addMealRecord] No user authenticated');
+      throw new Error('로그인이 필요합니다');
+    }
+    const { error } = await supabase.from('meal_records').insert({
       user_id: user.id,
       meal_type: record.meal_type,
       eaten_at: record.eaten_at,
@@ -102,13 +119,20 @@ export function useSupabaseSync() {
       photo_url: record.photo_url,
       note: record.note,
     });
+    if (error) {
+      console.error('[addMealRecord] Insert error:', error);
+      throw new Error(`식단 기록 저장 실패: ${error.message}`);
+    }
     const { data } = await supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false });
     useRecordsStore.setState({ mealRecords: (data || []).map(m => ({ ...m, items: [] })) });
   }, [user, supabase]);
 
   const addExerciseRecord = useCallback(async (record: { exercise_type: string; duration_minutes: number; intensity: string; steps: number | null; calories_burned: number | null; started_at: string; glucose_before: number | null; glucose_after: number | null; carb_supplement: number | null; note: string | null }) => {
-    if (!user) return;
-    await supabase.from('exercise_records').insert({
+    if (!user) {
+      console.error('[addExerciseRecord] No user authenticated');
+      throw new Error('로그인이 필요합니다');
+    }
+    const { error } = await supabase.from('exercise_records').insert({
       user_id: user.id,
       exercise_type: record.exercise_type,
       duration_minutes: record.duration_minutes,
@@ -121,13 +145,20 @@ export function useSupabaseSync() {
       carb_supplement: record.carb_supplement,
       note: record.note,
     });
+    if (error) {
+      console.error('[addExerciseRecord] Insert error:', error);
+      throw new Error(`운동 기록 저장 실패: ${error.message}`);
+    }
     const { data } = await supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false });
     useRecordsStore.setState({ exerciseRecords: data || [] });
   }, [user, supabase]);
 
   const addMoodRecord = useCallback(async (record: { mood: string; stress_level: number; factors: string[]; note: string | null; recorded_at: string }) => {
-    if (!user) return;
-    await supabase.from('mood_records').insert({
+    if (!user) {
+      console.error('[addMoodRecord] No user authenticated');
+      throw new Error('로그인이 필요합니다');
+    }
+    const { error } = await supabase.from('mood_records').insert({
       user_id: user.id,
       mood: record.mood,
       stress_level: record.stress_level,
@@ -135,19 +166,30 @@ export function useSupabaseSync() {
       note: record.note,
       recorded_at: record.recorded_at,
     });
+    if (error) {
+      console.error('[addMoodRecord] Insert error:', error);
+      throw new Error(`기분 기록 저장 실패: ${error.message}`);
+    }
     const { data } = await supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false });
     useRecordsStore.setState({ moodRecords: data || [] });
   }, [user, supabase]);
 
   const addHbA1cRecord = useCallback(async (record: { value: number; tested_at: string; lab_name: string | null; note: string | null }) => {
-    if (!user) return;
-    await supabase.from('hba1c_records').insert({
+    if (!user) {
+      console.error('[addHbA1cRecord] No user authenticated');
+      throw new Error('로그인이 필요합니다');
+    }
+    const { error } = await supabase.from('hba1c_records').insert({
       user_id: user.id,
       value: record.value,
       tested_at: record.tested_at,
       lab_name: record.lab_name,
       note: record.note,
     });
+    if (error) {
+      console.error('[addHbA1cRecord] Insert error:', error);
+      throw new Error(`HbA1c 기록 저장 실패: ${error.message}`);
+    }
     const { data } = await supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false });
     useRecordsStore.setState({ hba1cRecords: data || [] });
   }, [user, supabase]);
@@ -156,7 +198,7 @@ export function useSupabaseSync() {
     store.setProfile(updates);
     if (user) {
       const merged = { ...store.profile, ...updates };
-      await supabase.from('profiles').upsert({
+      const { error } = await supabase.from('profiles').upsert({
         id: user.id,
         display_name: merged.display_name,
         diabetes_type: merged.diabetes_type,
@@ -174,6 +216,9 @@ export function useSupabaseSync() {
         emergency_contact_phone: merged.emergency_contact_phone,
         onboarding_completed: merged.onboarding_completed,
       });
+      if (error) {
+        console.error('[updateProfile] Upsert error:', error);
+      }
     }
   }, [user, store, supabase]);
 
@@ -190,7 +235,10 @@ export function useSupabaseSync() {
       };
       const table = tableMap[type];
       if (table) {
-        await supabase.from(table).delete().eq('id', id).eq('user_id', user.id);
+        const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', user.id);
+        if (error) {
+          console.error(`[deleteRecord] Delete error (${type}):`, error);
+        }
       }
     }
   }, [user, store, supabase]);

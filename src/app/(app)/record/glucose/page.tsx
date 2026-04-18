@@ -51,20 +51,30 @@ export default function GlucoseRecordPage() {
     setDisplay((prev) => prev.slice(0, -1));
   };
 
-  const handleSubmit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
     if (numValue < 20 || numValue > 600) {
       toast.error("혈당값은 20~600 mg/dL 범위로 입력해 주세요");
       return;
     }
-    addGlucoseRecord({
-      value: numValue,
-      measured_at: new Date(recordTime).toISOString(),
-      source,
-      timing,
-      note: note.trim() || null,
-    });
-    toast.success("혈당이 기록되었습니다");
-    router.back();
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await addGlucoseRecord({
+        value: numValue,
+        measured_at: new Date(recordTime).toISOString(),
+        source,
+        timing,
+        note: note.trim() || null,
+      });
+      toast.success("혈당이 기록되었습니다");
+      router.back();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "저장에 실패했습니다");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -193,20 +203,20 @@ export default function GlucoseRecordPage() {
         </button>
         <button
           onClick={handleSubmit}
-          disabled={numValue === 0}
+          disabled={numValue === 0 || submitting}
           className="h-14 rounded-xl bg-teal-500 text-white text-base font-semibold disabled:opacity-40 active:bg-teal-600 transition-colors"
         >
-          완료
+          {submitting ? "저장 중..." : "완료"}
         </button>
       </div>
 
       {/* Submit button */}
       <Button
         onClick={handleSubmit}
-        disabled={numValue === 0}
+        disabled={numValue === 0 || submitting}
         className="w-full h-12 bg-teal-500 hover:bg-teal-600 text-white text-base font-semibold rounded-xl mt-auto"
       >
-        기록하기
+        {submitting ? "저장 중..." : "기록하기"}
       </Button>
     </div>
   );
