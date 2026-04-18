@@ -32,7 +32,10 @@ export function TextRecordInput({ type, placeholder, onParsed, examples }: TextR
       if (!res.ok) throw new Error("분석 실패");
 
       const data = await res.json();
-      const record = data.records?.[type];
+      const records = data.records?.[type];
+
+      // Support both array and single object format
+      const record = Array.isArray(records) ? records[0] : records;
 
       if (!record) {
         setError("텍스트에서 기록을 인식하지 못했어요. 다시 입력해보세요.");

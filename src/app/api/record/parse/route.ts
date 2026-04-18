@@ -4,71 +4,85 @@ import Anthropic from '@anthropic-ai/sdk';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const PARSE_PROMPT = `당신은 당뇨 환자의 건강 기록을 텍스트에서 추출하는 AI입니다.
-사용자가 자유 형식으로 입력한 텍스트를 분석하여, 해당하는 기록 유형별로 구조화된 데이터를 반환하세요.
+const PARSE_PROMPT = `당신은 당뇨 환자의 하루 건강 기록을 텍스트에서 추출하는 AI입니다.
+사용자가 자유 형식으로 입력한 텍스트를 분석하여, **모든 기록을 빠짐없이** 추출하세요.
+
+## 핵심: 같은 유형이 여러 번 나오면 모두 배열로 추출!
+- 혈당이 10번 측정되었으면 glucose 배열에 10개
+- 인슐린이 3번 맞았으면 insulin 배열에 3개
+- 식사/간식이 5번이면 meal 배열에 5개
+- 하나도 빠뜨리지 마세요!
 
 ## 기록 유형별 추출 규칙
 
-### 1. glucose (혈당)
-- 키워드: 혈당, 혈당수치, mg/dL, 공복, 식전, 식후, 취침전
-- timing 값: fasting(공복), before_meal(식전), after_meal(식후), before_exercise(운동전), after_exercise(운동후), before_sleep(취침전)
-- 예: "혈당 120" → value: 120
+### glucose (혈당)
+- 키워드: 혈당, 당수치, mg/dL, 공복, 식전, 식후, 취침전, 당체크
+- timing: fasting(공복), before_meal(식전), after_meal(식후), before_exercise(운동전), after_exercise(운동후), before_sleep(취침전), other(기타)
+- 숫자만 있어도 맥락상 혈당이면 추출 (예: "10시ㅡ72" → 혈당 72)
 
-### 2. insulin (인슐린)
-- 키워드: 인슐린, 단위, U, 노보래피드, 휴마로그, 란투스, 트레시바, 레버미어, 투제오, 피아스프, 애피드라
-- insulin_type: rapid(속효성: 노보래피드,휴마로그,피아스프,애피드라), long(지속성: 트레시바,란투스,레버미어,투제오)
-- injection_site: abdomen(배), thigh(허벅지), arm(팔), hip(엉덩이)
-- 예: "노보래피드 4단위 배에" → insulin_name: "노보래피드", dose: 4, injection_site: "abdomen"
+### insulin (인슐린)
+- 키워드: 인슐린, 단위, U, 노보(노보래피드), 휴마(휴마로그), 란투스, 트레시바, 레버미어, 투제오, 피아스프, 애피드라
+- insulin_type: rapid(속효성: 노보래피드/노보,휴마로그,피아스프,애피드라), long(지속성: 트레시바,란투스,레버미어,투제오)
+- "노보 20" = 노보래피드 20단위, "트레시바20" = 트레시바 20단위
+- injection_site: abdomen(배), thigh(허벅지), arm(팔), hip(엉덩이) - 없으면 "abdomen"
 
-### 3. meal (식단)
-- 키워드: 먹었, 식사, 아침, 점심, 저녁, 간식, 밥, 빵, 라면 등 음식 이름
-- meal_type: breakfast(아침), lunch(점심), dinner(저녁), snack(간식)
+### meal (식단)
+- 키워드: 식사, 먹었, 아침, 점심, 저녁, 간식, 음식 이름
+- meal_type: breakfast(아침/오전식사), lunch(점심), dinner(저녁), snack(간식/간단한 음식)
+- 간식류(떡, 빵, 과자, 음료, 두유, 라떼 등)도 반드시 meal로 추출! meal_type은 "snack"
 - 탄수화물(g), 칼로리(kcal) 추정
-- 예: "점심에 김치찌개랑 밥 먹음" → meal_type: "lunch", total_carbs: 75
+- note에 음식 이름 기재
 
-### 4. exercise (운동)
-- 키워드: 운동, 걷기, 달리기, 수영, 헬스, 웨이트, 자전거, 요가, 댄스, 격투기
-- exercise_type: weight(웨이트), cardio(유산소), swimming(수영), dance(댄스), martial_arts(격투기), yoga(요가), walking(걷기), cycling(자전거), other(기타)
-- intensity: low(가벼움), moderate(보통), high(격렬)
-- 예: "30분 걸었어" → exercise_type: "walking", duration_minutes: 30, intensity: "low"
+### exercise (운동)
+- exercise_type: weight/cardio/swimming/dance/martial_arts/yoga/walking/cycling/other
+- intensity: low/moderate/high
 
-### 5. mood (기분)
-- 키워드: 기분, 컨디션, 스트레스, 힘들, 좋은, 나쁜, 우울, 최고, 짜증
-- mood: great(최고), good(좋음), neutral(보통), bad(나쁨), terrible(최악)
-- stress_level: 1-5 (1=낮음, 5=높음)
-- factors: work(업무), sleep(수면), exercise(운동), relationship(관계), food(음식), weather(날씨), glucose(혈당), other(기타)
-- 예: "오늘 기분 좋아 스트레스 없음" → mood: "good", stress_level: 1
+### mood (기분)
+- mood: great/good/neutral/bad/terrible
+- stress_level: 1-5
 
-## 시간 인식 규칙
-- 텍스트에서 시간 정보를 추출하세요
-- "아침 7시", "오후 3시", "저녁 6시반", "10시", "14:30" 등 다양한 형식 인식
-- "아침"=07:00, "점심"=12:00, "저녁"=18:00, "취침전"=22:00 등 키워드로도 추정
-- "어제", "오늘 아침", "방금" 등의 상대 시간도 인식
-- 시간이 언급되지 않으면 time 필드는 null
+## 시간 인식 규칙 (매우 중요!)
+- 모든 기록에 시간을 반드시 추출
+- "새벽 12시19분" → "00:19", "오전 7시" → "07:00", "7시30분" → "07:30"
+- "10시" → "10:00", "12시25분" → "12:25", "6시40분" → "18:40"
+- "오후 3시" → "15:00", "밤 11시" → "23:00"
+- 시간 없으면 time: null
 
 ## 응답 형식
 
-반드시 아래 JSON 형식으로만 응답하세요:
+반드시 아래 JSON 형식으로만 응답하세요. 각 유형은 **배열**입니다:
 
 {
   "records": {
-    "glucose": null 또는 { "value": 120, "timing": "fasting", "source": "manual", "note": null, "time": "07:00" },
-    "insulin": null 또는 { "insulin_name": "노보래피드", "insulin_type": "rapid", "dose": 4, "injection_site": "abdomen", "note": null, "time": "07:30" },
-    "meal": null 또는 { "meal_type": "lunch", "total_carbs": 75, "total_calories": 450, "note": "김치찌개, 밥", "time": "12:00" },
-    "exercise": null 또는 { "exercise_type": "walking", "duration_minutes": 30, "intensity": "low", "calories_burned": null, "carb_supplement": null, "note": null, "time": "17:00" },
-    "mood": null 또는 { "mood": "good", "stress_level": 2, "factors": ["work"], "note": null, "time": null }
+    "glucose": [
+      { "value": 130, "timing": "other", "source": "manual", "note": null, "time": "00:19" },
+      { "value": 91, "timing": "fasting", "source": "manual", "note": "공복혈당", "time": "07:30" }
+    ],
+    "insulin": [
+      { "insulin_name": "트레시바", "insulin_type": "long", "dose": 20, "injection_site": "abdomen", "note": null, "time": "07:30" },
+      { "insulin_name": "노보래피드", "insulin_type": "rapid", "dose": 20, "injection_site": "abdomen", "note": null, "time": "07:30" }
+    ],
+    "meal": [
+      { "meal_type": "breakfast", "total_carbs": 60, "total_calories": 400, "note": "아침 식사", "time": "07:30" },
+      { "meal_type": "snack", "total_carbs": 25, "total_calories": 150, "note": "버터떡 1개", "time": "10:00" }
+    ],
+    "exercise": [],
+    "mood": []
   },
-  "summary": "인식된 내용 요약 (한글, 1줄)"
+  "summary": "인식된 내용 요약 (한글, 1줄)",
+  "total_count": 6
 }
 
 ## 중요 규칙
-- 텍스트에서 언급되지 않은 기록 유형은 null
+- 각 유형은 반드시 배열 (비어있으면 빈 배열 [])
+- 같은 시간에 여러 기록이 있을 수 있음 (예: 7시30분에 인슐린+식사 동시)
 - 숫자 값은 number 타입
-- time 필드는 "HH:mm" 형식 (24시간제). 시간 정보 없으면 null
+- time 필드는 "HH:mm" 형식 (24시간제)
+- "노보20" = 노보래피드 20단위로 해석
+- "식사" 또는 "식시"는 meal로 추출 (구체적 메뉴 없으면 note에 "식사"로)
 - 한국 음식 영양 정보는 정확하게
-- 애매한 경우 합리적으로 추정
-- JSON 외의 텍스트 절대 금지
-- 여러 기록 유형이 동시에 있을 수 있음`;
+- total_count에 전체 추출된 기록 수 기재
+- JSON 외의 텍스트 절대 금지`;
 
 export async function POST(request: Request) {
   try {
@@ -94,7 +108,7 @@ export async function POST(request: Request) {
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: [
         { role: 'user', content: `사용자 입력: ${text.trim()}` },
@@ -112,6 +126,18 @@ export async function POST(request: Request) {
         parsed = JSON.parse(jsonMatch[1]);
       } else {
         return NextResponse.json({ error: 'Failed to parse AI response', raw: responseText }, { status: 500 });
+      }
+    }
+
+    // Normalize: ensure arrays (backwards compat with old single-object format)
+    if (parsed.records) {
+      for (const key of ['glucose', 'insulin', 'meal', 'exercise', 'mood']) {
+        const val = parsed.records[key];
+        if (val === null || val === undefined) {
+          parsed.records[key] = [];
+        } else if (!Array.isArray(val)) {
+          parsed.records[key] = [val];
+        }
       }
     }
 
