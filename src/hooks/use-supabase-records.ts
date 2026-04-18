@@ -5,21 +5,23 @@ import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useRecordsStore } from '@/stores/records-store';
 
+// 2분 이내 같은 데이터가 있으면 중복으로 판단
+const DEDUP_WINDOW_MS = 2 * 60 * 1000;
+
 export function useSupabaseSync() {
   const { user, supabase } = useAuth();
   const store = useRecordsStore();
   const configured = isSupabaseConfigured();
   const fetchedRef = useRef(false);
+  // ref 기반 중복 클릭 방지 (React state보다 빠름)
+  const savingRef = useRef<Record<string, boolean>>({});
 
-  // Fetch all data from Supabase on mount / user change
   const fetchAll = useCallback(async () => {
     if (!user || !configured) {
-      console.log('[fetchAll] Skipped: user=', !!user, 'configured=', configured);
       store.setLoading(false);
       return;
     }
 
-    console.log('[fetchAll] Fetching all records for user:', user.id);
     store.setLoading(true);
 
     try {
@@ -41,14 +43,9 @@ export function useSupabaseSync() {
         supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false }),
       ]);
 
-      // Log errors for debugging
       if (profileRes.error) console.error('[fetchAll] Profile error:', profileRes.error);
       if (glucoseRes.error) console.error('[fetchAll] Glucose error:', glucoseRes.error);
       if (insulinRes.error) console.error('[fetchAll] Insulin error:', insulinRes.error);
-      if (mealsRes.error) console.error('[fetchAll] Meals error:', mealsRes.error);
-      if (exerciseRes.error) console.error('[fetchAll] Exercise error:', exerciseRes.error);
-      if (moodRes.error) console.error('[fetchAll] Mood error:', moodRes.error);
-      if (hba1cRes.error) console.error('[fetchAll] HbA1c error:', hba1cRes.error);
 
       if (profileRes.data) {
         store.setProfile({
@@ -56,13 +53,6 @@ export function useSupabaseSync() {
           preferred_insulins: profileRes.data.preferred_insulins || [],
         });
       }
-
-      console.log('[fetchAll] Results - glucose:', glucoseRes.data?.length ?? 0,
-        'insulin:', insulinRes.data?.length ?? 0,
-        'meals:', mealsRes.data?.length ?? 0,
-        'exercise:', exerciseRes.data?.length ?? 0,
-        'mood:', moodRes.data?.length ?? 0,
-        'hba1c:', hba1cRes.data?.length ?? 0);
 
       useRecordsStore.setState({
         glucoseRecords: glucoseRes.data || [],
@@ -81,174 +71,262 @@ export function useSupabaseSync() {
     }
   }, [user, configured, supabase, store]);
 
-  // Run fetchAll when user changes
   useEffect(() => {
     fetchedRef.current = false;
     fetchAll();
   }, [fetchAll]);
 
-  // Retry fetch if user is available but data wasn't loaded
   useEffect(() => {
     if (user && configured && !fetchedRef.current) {
       const timer = setTimeout(() => {
-        if (!fetchedRef.current) {
-          console.log('[fetchAll] Retry: data not loaded yet');
-          fetchAll();
-        }
+        if (!fetchedRef.current) fetchAll();
       }, 1500);
       return () => clearTimeout(timer);
     }
   }, [user, configured, fetchAll]);
 
-  // Save to Supabase, then refetch to sync
+  // ========== 중복 체크 헬퍼 ==========
+  // 같은 시간대(±2분) + 같은 핵심 값이면 중복으로 판단
+  function isTimeSimilar(t1: string, t2: string): boolean {
+    return Math.abs(new Date(t1).getTime() - new Date(t2).getTime()) < DEDUP_WINDOW_MS;
+  }
+
+  // ========== 저장 함수들 (중복 방지 적용) ==========
+
   const addGlucoseRecord = useCallback(async (record: { value: number; measured_at: string; source: string; timing: string; note: string | null }) => {
-    if (!user) {
-      console.error('[addGlucoseRecord] No user authenticated');
-      throw new Error('로그인이 필요합니다');
+    if (!user) throw new Error('로그인이 필요합니다');
+
+    // ref 기반 즉시 차단
+    if (savingRef.current.glucose) {
+      console.log('[addGlucoseRecord] 이미 저장 중 - 무시');
+      return;
     }
-    console.log('[addGlucoseRecord] Inserting:', record);
-    const { error } = await supabase.from('glucose_records').insert({
-      user_id: user.id,
-      value: record.value,
-      measured_at: record.measured_at,
-      source: record.source,
-      timing: record.timing,
-      note: record.note,
-    });
-    if (error) {
-      console.error('[addGlucoseRecord] Insert error:', error);
-      throw new Error(`혈당 기록 저장 실패: ${error.message}`);
-    }
-    console.log('[addGlucoseRecord] Insert success, refetching...');
-    // Refetch glucose records - don't wipe on error
-    const { data, error: fetchError } = await supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false });
-    if (fetchError) {
-      console.error('[addGlucoseRecord] Refetch error:', fetchError);
-      // Don't wipe existing data - just log the error
-    } else {
-      console.log('[addGlucoseRecord] Refetched', data?.length, 'records');
-      useRecordsStore.setState({ glucoseRecords: data || [] });
+    savingRef.current.glucose = true;
+
+    try {
+      // 서버 중복 체크: 같은 시간대 + 같은 값
+      const { data: existing } = await supabase
+        .from('glucose_records')
+        .select('id, measured_at, value')
+        .eq('user_id', user.id)
+        .eq('value', record.value)
+        .eq('timing', record.timing);
+
+      const isDup = existing?.some(r => isTimeSimilar(r.measured_at, record.measured_at));
+      if (isDup) {
+        console.log('[addGlucoseRecord] 중복 기록 감지 - 건너뜀');
+        // 중복이지만 에러 대신 정상 완료 처리
+        return;
+      }
+
+      const { error } = await supabase.from('glucose_records').insert({
+        user_id: user.id,
+        value: record.value,
+        measured_at: record.measured_at,
+        source: record.source,
+        timing: record.timing,
+        note: record.note,
+      });
+      if (error) throw new Error(`혈당 기록 저장 실패: ${error.message}`);
+
+      const { data, error: fetchError } = await supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false });
+      if (!fetchError) useRecordsStore.setState({ glucoseRecords: data || [] });
+    } finally {
+      savingRef.current.glucose = false;
     }
   }, [user, supabase]);
 
   const addInsulinRecord = useCallback(async (record: { insulin_name: string; insulin_type: string; dose: number; injected_at: string; injection_site: string; note: string | null }) => {
-    if (!user) {
-      console.error('[addInsulinRecord] No user authenticated');
-      throw new Error('로그인이 필요합니다');
+    if (!user) throw new Error('로그인이 필요합니다');
+
+    if (savingRef.current.insulin) {
+      console.log('[addInsulinRecord] 이미 저장 중 - 무시');
+      return;
     }
-    const { error } = await supabase.from('insulin_records').insert({
-      user_id: user.id,
-      insulin_name: record.insulin_name,
-      insulin_type: record.insulin_type,
-      dose: record.dose,
-      injected_at: record.injected_at,
-      injection_site: record.injection_site,
-      note: record.note,
-    });
-    if (error) {
-      console.error('[addInsulinRecord] Insert error:', error);
-      throw new Error(`인슐린 기록 저장 실패: ${error.message}`);
-    }
-    const { data, error: fetchError } = await supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false });
-    if (!fetchError) {
-      useRecordsStore.setState({ insulinRecords: data || [] });
+    savingRef.current.insulin = true;
+
+    try {
+      // 서버 중복 체크: 같은 시간대 + 같은 인슐린 + 같은 용량
+      const { data: existing } = await supabase
+        .from('insulin_records')
+        .select('id, injected_at, insulin_name, dose')
+        .eq('user_id', user.id)
+        .eq('insulin_name', record.insulin_name)
+        .eq('dose', record.dose);
+
+      const isDup = existing?.some(r => isTimeSimilar(r.injected_at, record.injected_at));
+      if (isDup) {
+        console.log('[addInsulinRecord] 중복 기록 감지 - 건너뜀');
+        return;
+      }
+
+      const { error } = await supabase.from('insulin_records').insert({
+        user_id: user.id,
+        insulin_name: record.insulin_name,
+        insulin_type: record.insulin_type,
+        dose: record.dose,
+        injected_at: record.injected_at,
+        injection_site: record.injection_site,
+        note: record.note,
+      });
+      if (error) throw new Error(`인슐린 기록 저장 실패: ${error.message}`);
+
+      const { data, error: fetchError } = await supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false });
+      if (!fetchError) useRecordsStore.setState({ insulinRecords: data || [] });
+    } finally {
+      savingRef.current.insulin = false;
     }
   }, [user, supabase]);
 
   const addMealRecord = useCallback(async (record: { meal_type: string; eaten_at: string; total_carbs: number; total_calories: number | null; photo_url: string | null; note: string | null }) => {
-    if (!user) {
-      console.error('[addMealRecord] No user authenticated');
-      throw new Error('로그인이 필요합니다');
+    if (!user) throw new Error('로그인이 필요합니다');
+
+    if (savingRef.current.meal) {
+      console.log('[addMealRecord] 이미 저장 중 - 무시');
+      return;
     }
-    const { error } = await supabase.from('meal_records').insert({
-      user_id: user.id,
-      meal_type: record.meal_type,
-      eaten_at: record.eaten_at,
-      total_carbs: record.total_carbs,
-      total_calories: record.total_calories,
-      photo_url: record.photo_url,
-      note: record.note,
-    });
-    if (error) {
-      console.error('[addMealRecord] Insert error:', error);
-      throw new Error(`식단 기록 저장 실패: ${error.message}`);
-    }
-    const { data, error: fetchError } = await supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false });
-    if (!fetchError) {
-      useRecordsStore.setState({ mealRecords: (data || []).map(m => ({ ...m, items: [] })) });
+    savingRef.current.meal = true;
+
+    try {
+      // 서버 중복 체크: 같은 시간대 + 같은 식사유형 + 같은 탄수화물량
+      const { data: existing } = await supabase
+        .from('meal_records')
+        .select('id, eaten_at, meal_type, total_carbs')
+        .eq('user_id', user.id)
+        .eq('meal_type', record.meal_type)
+        .eq('total_carbs', record.total_carbs);
+
+      const isDup = existing?.some(r => isTimeSimilar(r.eaten_at, record.eaten_at));
+      if (isDup) {
+        console.log('[addMealRecord] 중복 기록 감지 - 건너뜀');
+        return;
+      }
+
+      const { error } = await supabase.from('meal_records').insert({
+        user_id: user.id,
+        meal_type: record.meal_type,
+        eaten_at: record.eaten_at,
+        total_carbs: record.total_carbs,
+        total_calories: record.total_calories,
+        photo_url: record.photo_url,
+        note: record.note,
+      });
+      if (error) throw new Error(`식단 기록 저장 실패: ${error.message}`);
+
+      const { data, error: fetchError } = await supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false });
+      if (!fetchError) useRecordsStore.setState({ mealRecords: (data || []).map(m => ({ ...m, items: [] })) });
+    } finally {
+      savingRef.current.meal = false;
     }
   }, [user, supabase]);
 
   const addExerciseRecord = useCallback(async (record: { exercise_type: string; duration_minutes: number; intensity: string; steps: number | null; calories_burned: number | null; started_at: string; glucose_before: number | null; glucose_after: number | null; carb_supplement: number | null; note: string | null }) => {
-    if (!user) {
-      console.error('[addExerciseRecord] No user authenticated');
-      throw new Error('로그인이 필요합니다');
+    if (!user) throw new Error('로그인이 필요합니다');
+
+    if (savingRef.current.exercise) {
+      console.log('[addExerciseRecord] 이미 저장 중 - 무시');
+      return;
     }
-    const { error } = await supabase.from('exercise_records').insert({
-      user_id: user.id,
-      exercise_type: record.exercise_type,
-      duration_minutes: record.duration_minutes,
-      intensity: record.intensity,
-      steps: record.steps,
-      calories_burned: record.calories_burned,
-      started_at: record.started_at,
-      glucose_before: record.glucose_before,
-      glucose_after: record.glucose_after,
-      carb_supplement: record.carb_supplement,
-      note: record.note,
-    });
-    if (error) {
-      console.error('[addExerciseRecord] Insert error:', error);
-      throw new Error(`운동 기록 저장 실패: ${error.message}`);
-    }
-    const { data, error: fetchError } = await supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false });
-    if (!fetchError) {
-      useRecordsStore.setState({ exerciseRecords: data || [] });
+    savingRef.current.exercise = true;
+
+    try {
+      // 서버 중복 체크: 같은 시간대 + 같은 운동종류
+      const { data: existing } = await supabase
+        .from('exercise_records')
+        .select('id, started_at, exercise_type')
+        .eq('user_id', user.id)
+        .eq('exercise_type', record.exercise_type);
+
+      const isDup = existing?.some(r => isTimeSimilar(r.started_at, record.started_at));
+      if (isDup) {
+        console.log('[addExerciseRecord] 중복 기록 감지 - 건너뜀');
+        return;
+      }
+
+      const { error } = await supabase.from('exercise_records').insert({
+        user_id: user.id,
+        exercise_type: record.exercise_type,
+        duration_minutes: record.duration_minutes,
+        intensity: record.intensity,
+        steps: record.steps,
+        calories_burned: record.calories_burned,
+        started_at: record.started_at,
+        glucose_before: record.glucose_before,
+        glucose_after: record.glucose_after,
+        carb_supplement: record.carb_supplement,
+        note: record.note,
+      });
+      if (error) throw new Error(`운동 기록 저장 실패: ${error.message}`);
+
+      const { data, error: fetchError } = await supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false });
+      if (!fetchError) useRecordsStore.setState({ exerciseRecords: data || [] });
+    } finally {
+      savingRef.current.exercise = false;
     }
   }, [user, supabase]);
 
   const addMoodRecord = useCallback(async (record: { mood: string; stress_level: number; factors: string[]; note: string | null; recorded_at: string }) => {
-    if (!user) {
-      console.error('[addMoodRecord] No user authenticated');
-      throw new Error('로그인이 필요합니다');
+    if (!user) throw new Error('로그인이 필요합니다');
+
+    if (savingRef.current.mood) {
+      console.log('[addMoodRecord] 이미 저장 중 - 무시');
+      return;
     }
-    const { error } = await supabase.from('mood_records').insert({
-      user_id: user.id,
-      mood: record.mood,
-      stress_level: record.stress_level,
-      factors: record.factors,
-      note: record.note,
-      recorded_at: record.recorded_at,
-    });
-    if (error) {
-      console.error('[addMoodRecord] Insert error:', error);
-      throw new Error(`기분 기록 저장 실패: ${error.message}`);
-    }
-    const { data, error: fetchError } = await supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false });
-    if (!fetchError) {
-      useRecordsStore.setState({ moodRecords: data || [] });
+    savingRef.current.mood = true;
+
+    try {
+      const { data: existing } = await supabase
+        .from('mood_records')
+        .select('id, recorded_at, mood')
+        .eq('user_id', user.id)
+        .eq('mood', record.mood);
+
+      const isDup = existing?.some(r => isTimeSimilar(r.recorded_at, record.recorded_at));
+      if (isDup) {
+        console.log('[addMoodRecord] 중복 기록 감지 - 건너뜀');
+        return;
+      }
+
+      const { error } = await supabase.from('mood_records').insert({
+        user_id: user.id,
+        mood: record.mood,
+        stress_level: record.stress_level,
+        factors: record.factors,
+        note: record.note,
+        recorded_at: record.recorded_at,
+      });
+      if (error) throw new Error(`기분 기록 저장 실패: ${error.message}`);
+
+      const { data, error: fetchError } = await supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false });
+      if (!fetchError) useRecordsStore.setState({ moodRecords: data || [] });
+    } finally {
+      savingRef.current.mood = false;
     }
   }, [user, supabase]);
 
   const addHbA1cRecord = useCallback(async (record: { value: number; tested_at: string; lab_name: string | null; note: string | null }) => {
-    if (!user) {
-      console.error('[addHbA1cRecord] No user authenticated');
-      throw new Error('로그인이 필요합니다');
+    if (!user) throw new Error('로그인이 필요합니다');
+
+    if (savingRef.current.hba1c) {
+      console.log('[addHbA1cRecord] 이미 저장 중 - 무시');
+      return;
     }
-    const { error } = await supabase.from('hba1c_records').insert({
-      user_id: user.id,
-      value: record.value,
-      tested_at: record.tested_at,
-      lab_name: record.lab_name,
-      note: record.note,
-    });
-    if (error) {
-      console.error('[addHbA1cRecord] Insert error:', error);
-      throw new Error(`HbA1c 기록 저장 실패: ${error.message}`);
-    }
-    const { data, error: fetchError } = await supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false });
-    if (!fetchError) {
-      useRecordsStore.setState({ hba1cRecords: data || [] });
+    savingRef.current.hba1c = true;
+
+    try {
+      const { error } = await supabase.from('hba1c_records').insert({
+        user_id: user.id,
+        value: record.value,
+        tested_at: record.tested_at,
+        lab_name: record.lab_name,
+        note: record.note,
+      });
+      if (error) throw new Error(`HbA1c 기록 저장 실패: ${error.message}`);
+
+      const { data, error: fetchError } = await supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false });
+      if (!fetchError) useRecordsStore.setState({ hba1cRecords: data || [] });
+    } finally {
+      savingRef.current.hba1c = false;
     }
   }, [user, supabase]);
 
@@ -274,9 +352,7 @@ export function useSupabaseSync() {
         emergency_contact_phone: merged.emergency_contact_phone,
         onboarding_completed: merged.onboarding_completed,
       });
-      if (error) {
-        console.error('[updateProfile] Upsert error:', error);
-      }
+      if (error) console.error('[updateProfile] Upsert error:', error);
     }
   }, [user, store, supabase]);
 
@@ -294,9 +370,7 @@ export function useSupabaseSync() {
       const table = tableMap[type];
       if (table) {
         const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', user.id);
-        if (error) {
-          console.error(`[deleteRecord] Delete error (${type}):`, error);
-        }
+        if (error) console.error(`[deleteRecord] Delete error (${type}):`, error);
       }
     }
   }, [user, store, supabase]);
