@@ -4,9 +4,11 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, X, Camera, ImagePlus, Loader2, Pencil, Check, Search } from "lucide-react";
 import { toast } from "sonner";
+import { isToday, isYesterday, format, subDays, isAfter } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import { foodDatabase, foodCategories } from "@/data/foods";
@@ -14,6 +16,7 @@ import type { MealType, MealFoodItem, FoodCategory } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useRecordsStore } from "@/stores/records-store";
 
 const mealTypes: { value: MealType; label: string }[] = [
   { value: "breakfast", label: "아침" },
@@ -43,11 +46,135 @@ interface AnalyzedFood {
   calories: number | null;
 }
 
+const mealTypeLabels: Record<string, string> = {
+  breakfast: "아침",
+  lunch: "점심",
+  dinner: "저녁",
+  snack: "간식",
+};
+
+function MealDashboard() {
+  const { mealRecords } = useRecordsStore();
+  const [period, setPeriod] = useState<"today" | "3d" | "7d" | "30d">("today");
+
+  const periodOptions = [
+    { value: "today" as const, label: "오늘" },
+    { value: "3d" as const, label: "3일" },
+    { value: "7d" as const, label: "7일" },
+    { value: "30d" as const, label: "30일" },
+  ];
+
+  const filteredRecords = useMemo(() => {
+    const now = new Date();
+    let cutoff: Date;
+    switch (period) {
+      case "today":
+        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "3d":
+        cutoff = subDays(now, 3);
+        break;
+      case "7d":
+        cutoff = subDays(now, 7);
+        break;
+      case "30d":
+        cutoff = subDays(now, 30);
+        break;
+    }
+    return mealRecords
+      .filter((r) => isAfter(new Date(r.eaten_at), cutoff))
+      .sort((a, b) => new Date(b.eaten_at).getTime() - new Date(a.eaten_at).getTime());
+  }, [mealRecords, period]);
+
+  const stats = useMemo(() => {
+    const totalCarbs = filteredRecords.reduce((s, r) => s + (r.total_carbs || 0), 0);
+    const totalCalories = filteredRecords.reduce((s, r) => s + (r.total_calories || 0), 0);
+    return { totalCarbs, totalCalories, mealCount: filteredRecords.length };
+  }, [filteredRecords]);
+
+  const formatTime = (dateStr: string) => {
+    const d = new Date(dateStr);
+    if (isToday(d)) return `오늘 ${format(d, "HH:mm")}`;
+    if (isYesterday(d)) return `어제 ${format(d, "HH:mm")}`;
+    return format(d, "MM/dd HH:mm");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector */}
+      <div className="flex gap-2">
+        {periodOptions.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setPeriod(opt.value)}
+            className={cn(
+              "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+              period === opt.value
+                ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-orange-50 dark:bg-orange-950/30 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.totalCarbs}g</div>
+          <div className="text-xs text-muted-foreground">총 탄수화물</div>
+        </div>
+        <div className="bg-orange-50 dark:bg-orange-950/30 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.totalCalories}</div>
+          <div className="text-xs text-muted-foreground">총 칼로리</div>
+        </div>
+        <div className="bg-orange-50 dark:bg-orange-950/30 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.mealCount}</div>
+          <div className="text-xs text-muted-foreground">끼니 수</div>
+        </div>
+      </div>
+
+      {/* Records list */}
+      {filteredRecords.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          해당 기간에 기록이 없습니다
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredRecords.map((record) => (
+            <div key={record.id} className="bg-muted rounded-xl p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{formatTime(record.eaten_at)}</span>
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                    {mealTypeLabels[record.meal_type] || record.meal_type}
+                  </Badge>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="font-semibold text-orange-600 dark:text-orange-400">{record.total_carbs}g 탄수화물</span>
+                {record.total_calories != null && record.total_calories > 0 && (
+                  <span className="text-muted-foreground">{record.total_calories} kcal</span>
+                )}
+              </div>
+              {record.note && (
+                <p className="text-xs text-muted-foreground truncate">{record.note}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MealRecordPage() {
   const router = useRouter();
   const { addMealRecord } = useSync();
   const { user } = useAuth();
 
+  const [viewMode, setViewMode] = useState<"record" | "dashboard">("record");
   const [mealType, setMealType] = useState<MealType>("lunch");
   const [mode, setMode] = useState<"photo" | "quick" | "detail">("photo");
   const [quickCarbs, setQuickCarbs] = useState(0);
@@ -399,6 +526,36 @@ export default function MealRecordPage() {
         <h1 className="text-xl font-bold">식단 기록</h1>
       </div>
 
+      {/* View mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setViewMode("record")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "record"
+              ? "bg-orange-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록하기
+        </button>
+        <button
+          onClick={() => setViewMode("dashboard")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "dashboard"
+              ? "bg-orange-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록 보기
+        </button>
+      </div>
+
+      {viewMode === "dashboard" ? (
+        <MealDashboard />
+      ) : (
+      <>
       {/* AI Text Input */}
       <div className="mb-4">
         <TextRecordInput
@@ -926,6 +1083,8 @@ export default function MealRecordPage() {
       >
         {submitting ? "저장 중..." : "기록하기"}
       </Button>
+      </>
+      )}
     </div>
   );
 }

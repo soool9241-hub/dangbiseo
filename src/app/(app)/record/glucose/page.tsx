@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Delete } from "lucide-react";
 import { toast } from "sonner";
+import { isToday, isYesterday, format, subDays, isAfter } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { GlucoseRangeBadge } from "@/components/shared/GlucoseRangeBadge";
 import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
+import { useRecordsStore } from "@/stores/records-store";
 import type { GlucoseTiming, GlucoseSource } from "@/types/database";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +32,7 @@ const sourceOptions: { value: GlucoseSource; label: string }[] = [
 export default function GlucoseRecordPage() {
   const router = useRouter();
   const { addGlucoseRecord } = useSync();
+  const [viewMode, setViewMode] = useState<"record" | "dashboard">("record");
 
   const [display, setDisplay] = useState("");
   const [timing, setTiming] = useState<GlucoseTiming>("fasting");
@@ -92,6 +96,34 @@ export default function GlucoseRecordPage() {
         <h1 className="text-xl font-bold">혈당 기록</h1>
       </div>
 
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setViewMode("record")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "record"
+              ? "bg-teal-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록하기
+        </button>
+        <button
+          onClick={() => setViewMode("dashboard")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "dashboard"
+              ? "bg-teal-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록 보기
+        </button>
+      </div>
+
+      {viewMode === "record" ? (
+      <>
       {/* AI Text Input */}
       <div className="mb-4">
         <TextRecordInput
@@ -218,6 +250,119 @@ export default function GlucoseRecordPage() {
       >
         {submitting ? "저장 중..." : "기록하기"}
       </Button>
+      </>
+      ) : (
+        <GlucoseDashboard />
+      )}
+    </div>
+  );
+}
+
+function GlucoseDashboard() {
+  const { glucoseRecords, profile } = useRecordsStore();
+  const [period, setPeriod] = useState<"today" | "3d" | "7d" | "30d">("today");
+
+  const filtered = useMemo(() => {
+    const now = new Date();
+    return glucoseRecords
+      .filter((r) => {
+        const d = new Date(r.measured_at);
+        if (period === "today") return isToday(d);
+        const days = period === "3d" ? 3 : period === "7d" ? 7 : 30;
+        return isAfter(d, subDays(now, days));
+      })
+      .sort((a, b) => new Date(b.measured_at).getTime() - new Date(a.measured_at).getTime());
+  }, [glucoseRecords, period]);
+
+  const stats = useMemo(() => {
+    if (filtered.length === 0) return null;
+    const values = filtered.map(r => r.value);
+    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const inRange = values.filter(v => v >= profile.target_glucose_min && v <= profile.target_glucose_max).length;
+    const tir = Math.round((inRange / values.length) * 100);
+    return { avg, min, max, tir, count: values.length };
+  }, [filtered, profile]);
+
+  const timingLabels: Record<string, string> = {
+    fasting: "공복", before_meal: "식전", after_meal: "식후",
+    before_exercise: "운동전", after_exercise: "운동후",
+    before_sleep: "취침전", other: "상시",
+  };
+
+  function getColor(value: number) {
+    if (value < profile.target_glucose_min) return "text-red-600 dark:text-red-400";
+    if (value > profile.target_glucose_max) return "text-orange-600 dark:text-orange-400";
+    return "text-green-600 dark:text-green-400";
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector */}
+      <div className="flex gap-1">
+        {([["today", "오늘"], ["3d", "3일"], ["7d", "7일"], ["30d", "30일"]] as const).map(([v, l]) => (
+          <button
+            key={v}
+            onClick={() => setPeriod(v)}
+            className={cn(
+              "flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              period === v ? "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" : "bg-muted text-muted-foreground"
+            )}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-4 gap-2">
+          <div className="rounded-lg bg-muted p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">평균</p>
+            <p className="text-lg font-bold">{stats.avg}</p>
+          </div>
+          <div className="rounded-lg bg-muted p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">최저</p>
+            <p className="text-lg font-bold text-red-500">{stats.min}</p>
+          </div>
+          <div className="rounded-lg bg-muted p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">최고</p>
+            <p className="text-lg font-bold text-orange-500">{stats.max}</p>
+          </div>
+          <div className="rounded-lg bg-muted p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">TIR</p>
+            <p className={cn("text-lg font-bold", stats.tir >= 70 ? "text-green-600" : "text-orange-500")}>{stats.tir}%</p>
+          </div>
+        </div>
+      )}
+
+      {/* Records list */}
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-muted-foreground">{filtered.length}건의 기록</p>
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">기록이 없습니다</p>
+        ) : (
+          filtered.map((r) => {
+            const d = new Date(r.measured_at);
+            return (
+              <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs text-muted-foreground w-20">
+                    {isToday(d) ? format(d, "HH:mm") : isYesterday(d) ? `어제 ${format(d, "HH:mm")}` : format(d, "M/d HH:mm")}
+                  </span>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {timingLabels[r.timing] || "상시"}
+                  </Badge>
+                </div>
+                <span className={cn("text-sm font-bold tabular-nums", getColor(r.value))}>
+                  {r.value} <span className="text-xs font-normal text-muted-foreground">mg/dL</span>
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

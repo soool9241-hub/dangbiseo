@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { isToday, isYesterday, format, subDays, isAfter } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
+import { useRecordsStore } from "@/stores/records-store";
 import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import type { InsulinType, InjectionSite } from "@/types/database";
 import { cn } from "@/lib/utils";
@@ -45,9 +48,161 @@ const injectionSites: { value: InjectionSite; label: string }[] = [
   { value: "hip", label: "엉덩이" },
 ];
 
+type PeriodKey = "today" | "3days" | "7days" | "30days";
+
+const periodOptions: { key: PeriodKey; label: string }[] = [
+  { key: "today", label: "오늘" },
+  { key: "3days", label: "3일" },
+  { key: "7days", label: "7일" },
+  { key: "30days", label: "30일" },
+];
+
+function InsulinDashboard() {
+  const { insulinRecords } = useRecordsStore();
+  const [period, setPeriod] = useState<PeriodKey>("today");
+
+  const filtered = useMemo(() => {
+    const now = new Date();
+    let cutoff: Date;
+    switch (period) {
+      case "today":
+        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "3days":
+        cutoff = subDays(now, 3);
+        break;
+      case "7days":
+        cutoff = subDays(now, 7);
+        break;
+      case "30days":
+        cutoff = subDays(now, 30);
+        break;
+    }
+    return insulinRecords
+      .filter((r) => isAfter(new Date(r.injected_at), cutoff))
+      .sort(
+        (a, b) =>
+          new Date(b.injected_at).getTime() - new Date(a.injected_at).getTime()
+      );
+  }, [insulinRecords, period]);
+
+  const stats = useMemo(() => {
+    const totalDose = filtered.reduce((sum, r) => sum + r.dose, 0);
+    const rapidDose = filtered
+      .filter((r) => r.insulin_type === "rapid")
+      .reduce((sum, r) => sum + r.dose, 0);
+    const longDose = filtered
+      .filter((r) => r.insulin_type === "long")
+      .reduce((sum, r) => sum + r.dose, 0);
+    return { totalDose, rapidDose, longDose };
+  }, [filtered]);
+
+  const formatRecordDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    if (isToday(d)) return `오늘 ${format(d, "HH:mm")}`;
+    if (isYesterday(d)) return `어제 ${format(d, "HH:mm")}`;
+    return format(d, "M/d HH:mm");
+  };
+
+  const siteLabel = (site: InjectionSite) => {
+    const found = injectionSites.find((s) => s.value === site);
+    return found ? found.label : site;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector */}
+      <div className="flex gap-2">
+        {periodOptions.map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setPeriod(opt.key)}
+            className={cn(
+              "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+              period === opt.key
+                ? "bg-purple-500 text-white"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-3 text-center">
+          <p className="text-xs text-muted-foreground mb-1">총 투여량</p>
+          <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
+            {stats.totalDose}
+            <span className="text-xs font-normal ml-0.5">U</span>
+          </p>
+        </div>
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 text-center">
+          <p className="text-xs text-muted-foreground mb-1">속효성 합계</p>
+          <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
+            {stats.rapidDose}
+            <span className="text-xs font-normal ml-0.5">U</span>
+          </p>
+        </div>
+        <div className="bg-violet-50 dark:bg-violet-900/20 rounded-xl p-3 text-center">
+          <p className="text-xs text-muted-foreground mb-1">지속성 합계</p>
+          <p className="text-xl font-bold text-violet-600 dark:text-violet-400">
+            {stats.longDose}
+            <span className="text-xs font-normal ml-0.5">U</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Records list */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">
+          해당 기간에 기록이 없습니다
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((rec) => (
+            <div
+              key={rec.id}
+              className="flex items-center justify-between p-3 bg-muted/50 rounded-xl"
+            >
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm">
+                    {rec.insulin_name}
+                  </span>
+                  <Badge
+                    className={cn(
+                      "text-[10px] px-1.5",
+                      rec.insulin_type === "rapid"
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                        : "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                    )}
+                  >
+                    {rec.insulin_type === "rapid" ? "속효성" : "지속성"}
+                  </Badge>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {formatRecordDate(rec.injected_at)}
+                  {rec.injection_site && ` · ${siteLabel(rec.injection_site)}`}
+                </span>
+              </div>
+              <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                {rec.dose}
+                <span className="text-xs font-normal ml-0.5">U</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function InsulinRecordPage() {
   const router = useRouter();
   const { addInsulinRecord } = useSync();
+  const [viewMode, setViewMode] = useState<"record" | "dashboard">("record");
 
   const [selectedName, setSelectedName] = useState("노보래피드");
   const [selectedType, setSelectedType] = useState<InsulinType>("rapid");
@@ -109,180 +264,212 @@ export default function InsulinRecordPage() {
         <h1 className="text-xl font-bold">인슐린 기록</h1>
       </div>
 
-      {/* AI Text Input */}
-      <TextRecordInput
-        type="insulin"
-        placeholder="예: 노보래피드 4단위 배에 맞음"
-        examples={["노보래피드 4단위", "트레시바 10단위 허벅지", "휴마로그 6단위 배"]}
-        onParsed={(data) => {
-          const d = data as { insulin_name?: string; insulin_type?: string; dose?: number; injection_site?: string };
-          if (d.insulin_name) {
-            setSelectedName(d.insulin_name);
-            setIsCustom(false);
-            const found = insulinCategories.flatMap(c => c.examples).find(e => e.name === d.insulin_name);
-            if (!found) {
-              setIsCustom(true);
-              setCustomName(d.insulin_name);
-            }
-          }
-          if (d.insulin_type) setSelectedType(d.insulin_type as InsulinType);
-          if (d.dose) setDose(String(d.dose));
-          if (d.injection_site) setSite(d.injection_site as InjectionSite);
-          toast.success("텍스트에서 인슐린 정보를 인식했어요!");
-        }}
-      />
+      {/* Mode toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setViewMode("record")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "record"
+              ? "bg-purple-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록하기
+        </button>
+        <button
+          onClick={() => setViewMode("dashboard")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "dashboard"
+              ? "bg-purple-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록 보기
+        </button>
+      </div>
 
-      {/* Insulin type + name selection */}
-      {insulinCategories.map((cat) => (
-        <div key={cat.type}>
-          <p className="text-sm font-medium text-muted-foreground mb-2">
-            {cat.label}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {cat.examples.map((ins) => (
-              <button
-                key={ins.name}
-                onClick={() => handleSelect(ins.name, ins.type)}
-                className={cn(
-                  "py-3 rounded-xl text-sm font-semibold transition-colors",
-                  selectedName === ins.name && !isCustom
-                    ? cat.type === "rapid"
-                      ? "bg-blue-500 text-white"
-                      : "bg-violet-500 text-white"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                {ins.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* Custom insulin */}
-      <button
-        onClick={() => {
-          setIsCustom(true);
-          setSelectedName("");
-        }}
-        className={cn(
-          "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
-          isCustom ? "bg-blue-500 text-white" : "bg-muted text-muted-foreground"
-        )}
-      >
-        기타 인슐린 직접 입력
-      </button>
-      {isCustom && (
-        <Input
-          placeholder="인슐린 이름"
-          value={customName}
-          onChange={(e) => setCustomName(e.target.value)}
-          autoFocus
-        />
-      )}
-
-      {/* Dose — number input + presets */}
-      <div>
-        <p className="text-sm font-medium text-muted-foreground mb-2">단위 (U)</p>
-        {/* Direct number input */}
-        <div className="flex items-center gap-3 mb-3">
-          <Input
-            type="number"
-            placeholder="숫자 입력"
-            value={dose}
-            onChange={(e) => setDose(e.target.value)}
-            className="flex-1 h-12 text-center text-2xl font-bold"
-            step="0.5"
-            min="0"
+      {viewMode === "record" ? (
+        <>
+          {/* AI Text Input */}
+          <TextRecordInput
+            type="insulin"
+            placeholder="예: 노보래피드 4단위 배에 맞음"
+            examples={["노보래피드 4단위", "트레시바 10단위 허벅지", "휴마로그 6단위 배"]}
+            onParsed={(data) => {
+              const d = data as { insulin_name?: string; insulin_type?: string; dose?: number; injection_site?: string };
+              if (d.insulin_name) {
+                setSelectedName(d.insulin_name);
+                setIsCustom(false);
+                const found = insulinCategories.flatMap(c => c.examples).find(e => e.name === d.insulin_name);
+                if (!found) {
+                  setIsCustom(true);
+                  setCustomName(d.insulin_name);
+                }
+              }
+              if (d.insulin_type) setSelectedType(d.insulin_type as InsulinType);
+              if (d.dose) setDose(String(d.dose));
+              if (d.injection_site) setSite(d.injection_site as InjectionSite);
+              toast.success("텍스트에서 인슐린 정보를 인식했어요!");
+            }}
           />
-          <span className="text-lg font-semibold text-muted-foreground shrink-0">U</span>
-        </div>
-        {/* Quick presets */}
-        <div className="grid grid-cols-4 gap-2 mb-2">
-          {[2, 4, 6, 8, 10, 15, 20, 25].map((v) => (
-            <button
-              key={v}
-              onClick={() => setDose(String(v))}
-              className={cn(
-                "py-2.5 rounded-xl text-sm font-semibold transition-colors",
-                dose === String(v)
-                  ? "bg-blue-500 text-white"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              {v}U
-            </button>
+
+          {/* Insulin type + name selection */}
+          {insulinCategories.map((cat) => (
+            <div key={cat.type}>
+              <p className="text-sm font-medium text-muted-foreground mb-2">
+                {cat.label}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {cat.examples.map((ins) => (
+                  <button
+                    key={ins.name}
+                    onClick={() => handleSelect(ins.name, ins.type)}
+                    className={cn(
+                      "py-3 rounded-xl text-sm font-semibold transition-colors",
+                      selectedName === ins.name && !isCustom
+                        ? cat.type === "rapid"
+                          ? "bg-blue-500 text-white"
+                          : "bg-violet-500 text-white"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {ins.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
-        </div>
-        {/* Fine adjust +/- buttons */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setDose(String(Math.max(0, (parseFloat(dose) || 0) - 0.5)))}
-            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
-          >
-            - 0.5
-          </button>
-          <button
-            onClick={() => setDose(String(Math.max(0, (parseFloat(dose) || 0) - 1)))}
-            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
-          >
-            - 1
-          </button>
-          <button
-            onClick={() => setDose(String((parseFloat(dose) || 0) + 1))}
-            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
-          >
-            + 1
-          </button>
-          <button
-            onClick={() => setDose(String((parseFloat(dose) || 0) + 0.5))}
-            className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
-          >
-            + 0.5
-          </button>
-        </div>
-      </div>
 
-      {/* Time */}
-      <div>
-        <p className="text-sm font-medium text-muted-foreground mb-2">투여 시간</p>
-        <input
-          type="datetime-local"
-          value={recordTime}
-          onChange={(e) => setRecordTime(e.target.value)}
-          className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
-        />
-      </div>
+          {/* Custom insulin */}
+          <button
+            onClick={() => {
+              setIsCustom(true);
+              setSelectedName("");
+            }}
+            className={cn(
+              "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
+              isCustom ? "bg-blue-500 text-white" : "bg-muted text-muted-foreground"
+            )}
+          >
+            기타 인슐린 직접 입력
+          </button>
+          {isCustom && (
+            <Input
+              placeholder="인슐린 이름"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              autoFocus
+            />
+          )}
 
-      {/* Injection site */}
-      <div>
-        <p className="text-sm font-medium text-muted-foreground mb-2">주사 부위</p>
-        <div className="grid grid-cols-4 gap-2">
-          {injectionSites.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setSite(s.value)}
-              className={cn(
-                "py-3 rounded-xl text-sm font-semibold transition-colors",
-                site === s.value
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 ring-2 ring-blue-500"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
+          {/* Dose — number input + presets */}
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-2">단위 (U)</p>
+            {/* Direct number input */}
+            <div className="flex items-center gap-3 mb-3">
+              <Input
+                type="number"
+                placeholder="숫자 입력"
+                value={dose}
+                onChange={(e) => setDose(e.target.value)}
+                className="flex-1 h-12 text-center text-2xl font-bold"
+                step="0.5"
+                min="0"
+              />
+              <span className="text-lg font-semibold text-muted-foreground shrink-0">U</span>
+            </div>
+            {/* Quick presets */}
+            <div className="grid grid-cols-4 gap-2 mb-2">
+              {[2, 4, 6, 8, 10, 15, 20, 25].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setDose(String(v))}
+                  className={cn(
+                    "py-2.5 rounded-xl text-sm font-semibold transition-colors",
+                    dose === String(v)
+                      ? "bg-blue-500 text-white"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {v}U
+                </button>
+              ))}
+            </div>
+            {/* Fine adjust +/- buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDose(String(Math.max(0, (parseFloat(dose) || 0) - 0.5)))}
+                className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+              >
+                - 0.5
+              </button>
+              <button
+                onClick={() => setDose(String(Math.max(0, (parseFloat(dose) || 0) - 1)))}
+                className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+              >
+                - 1
+              </button>
+              <button
+                onClick={() => setDose(String((parseFloat(dose) || 0) + 1))}
+                className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+              >
+                + 1
+              </button>
+              <button
+                onClick={() => setDose(String((parseFloat(dose) || 0) + 0.5))}
+                className="flex-1 py-2 rounded-xl bg-muted text-muted-foreground font-semibold text-sm active:scale-95 transition-all"
+              >
+                + 0.5
+              </button>
+            </div>
+          </div>
 
-      {/* Submit */}
-      <Button
-        onClick={handleSubmit}
-        disabled={!dose || submitting}
-        className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white text-base font-semibold rounded-xl"
-      >
-        {submitting ? "저장 중..." : "기록하기"}
-      </Button>
+          {/* Time */}
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-2">투여 시간</p>
+            <input
+              type="datetime-local"
+              value={recordTime}
+              onChange={(e) => setRecordTime(e.target.value)}
+              className="w-full h-10 px-3 rounded-lg border bg-background text-sm"
+            />
+          </div>
+
+          {/* Injection site */}
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-2">주사 부위</p>
+            <div className="grid grid-cols-4 gap-2">
+              {injectionSites.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => setSite(s.value)}
+                  className={cn(
+                    "py-3 rounded-xl text-sm font-semibold transition-colors",
+                    site === s.value
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 ring-2 ring-blue-500"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Submit */}
+          <Button
+            onClick={handleSubmit}
+            disabled={!dose || submitting}
+            className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white text-base font-semibold rounded-xl"
+          >
+            {submitting ? "저장 중..." : "기록하기"}
+          </Button>
+        </>
+      ) : (
+        <InsulinDashboard />
+      )}
     </div>
   );
 }

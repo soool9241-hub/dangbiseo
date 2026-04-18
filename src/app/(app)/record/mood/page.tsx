@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { isToday, isYesterday, format, subDays, isAfter } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
 import { TextRecordInput } from "@/components/shared/TextRecordInput";
 import type { MoodLevel } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { useRecordsStore } from "@/stores/records-store";
 
 const moodOptions: { value: MoodLevel; emoji: string; label: string }[] = [
   { value: "great", emoji: "😄", label: "최고" },
@@ -31,10 +34,112 @@ const factorTags = [
   "기타",
 ];
 
+const moodEmojiMap: Record<string, { emoji: string; label: string }> = {
+  great: { emoji: "😄", label: "최고" },
+  good: { emoji: "😊", label: "좋음" },
+  neutral: { emoji: "😐", label: "보통" },
+  bad: { emoji: "😔", label: "나쁨" },
+  terrible: { emoji: "😢", label: "최악" },
+};
+
+function MoodDashboard() {
+  const { moodRecords } = useRecordsStore();
+  const [period, setPeriod] = useState<"today" | "3d" | "7d" | "30d">("today");
+
+  const periodOptions = [
+    { value: "today" as const, label: "오늘" },
+    { value: "3d" as const, label: "3일" },
+    { value: "7d" as const, label: "7일" },
+    { value: "30d" as const, label: "30일" },
+  ];
+
+  const filteredRecords = useMemo(() => {
+    const now = new Date();
+    let cutoff: Date;
+    switch (period) {
+      case "today":
+        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "3d":
+        cutoff = subDays(now, 3);
+        break;
+      case "7d":
+        cutoff = subDays(now, 7);
+        break;
+      case "30d":
+        cutoff = subDays(now, 30);
+        break;
+    }
+    return moodRecords
+      .filter((r) => isAfter(new Date(r.recorded_at), cutoff))
+      .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
+  }, [moodRecords, period]);
+
+  const formatTime = (dateStr: string) => {
+    const d = new Date(dateStr);
+    if (isToday(d)) return `오늘 ${format(d, "HH:mm")}`;
+    if (isYesterday(d)) return `어제 ${format(d, "HH:mm")}`;
+    return format(d, "MM/dd HH:mm");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector */}
+      <div className="flex gap-2">
+        {periodOptions.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setPeriod(opt.value)}
+            className={cn(
+              "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+              period === opt.value
+                ? "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Records list */}
+      {filteredRecords.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          해당 기간에 기록이 없습니다
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredRecords.map((record) => {
+            const moodInfo = moodEmojiMap[record.mood] || { emoji: "😐", label: record.mood };
+            return (
+              <div key={record.id} className="bg-muted rounded-xl p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{formatTime(record.recorded_at)}</span>
+                    <span className="text-lg">{moodInfo.emoji}</span>
+                    <span className="text-sm font-medium">{moodInfo.label}</span>
+                  </div>
+                  <Badge variant="secondary" className="bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300">
+                    스트레스 {record.stress_level}/5
+                  </Badge>
+                </div>
+                {record.note && (
+                  <p className="text-xs text-muted-foreground truncate">{record.note}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MoodRecordPage() {
   const router = useRouter();
   const { addMoodRecord } = useSync();
 
+  const [viewMode, setViewMode] = useState<"record" | "dashboard">("record");
   const [mood, setMood] = useState<MoodLevel | null>(null);
   const [stressLevel, setStressLevel] = useState(3);
   const [selectedFactors, setSelectedFactors] = useState<string[]>([]);
@@ -93,6 +198,36 @@ export default function MoodRecordPage() {
         <h1 className="text-xl font-bold">기분 기록</h1>
       </div>
 
+      {/* View mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setViewMode("record")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "record"
+              ? "bg-pink-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록하기
+        </button>
+        <button
+          onClick={() => setViewMode("dashboard")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            viewMode === "dashboard"
+              ? "bg-pink-500 text-white"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          기록 보기
+        </button>
+      </div>
+
+      {viewMode === "dashboard" ? (
+        <MoodDashboard />
+      ) : (
+      <>
       {/* AI Text Input */}
       <div className="mb-4">
         <TextRecordInput
@@ -212,6 +347,8 @@ export default function MoodRecordPage() {
       >
         {submitting ? "저장 중..." : "기록하기"}
       </Button>
+      </>
+      )}
     </div>
   );
 }
