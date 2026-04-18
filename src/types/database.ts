@@ -8,7 +8,7 @@ export type GlucoseSource = 'manual' | 'cgm';
 export type ExerciseType = '웨이트' | '유산소' | '수영' | '댄스' | '격투기' | '요가' | '걷기' | '자전거' | '기타';
 export type ExerciseIntensity = 'low' | 'moderate' | 'high';
 export type MoodLevel = 'great' | 'good' | 'neutral' | 'bad' | 'terrible';
-export type FoodCategory = '한식' | '양식' | '중식' | '분식' | '패스트푸드' | '편의점' | '간식' | '음료' | '카페';
+export type FoodCategory = '한식' | '양식' | '중식' | '일식' | '분식' | '패스트푸드' | '편의점' | '간식' | '음료' | '카페';
 
 export interface Profile {
   id: string;

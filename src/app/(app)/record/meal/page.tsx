@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Camera, ImagePlus, Loader2, Pencil, Check } from "lucide-react";
+import { ArrowLeft, Plus, X, Camera, ImagePlus, Loader2, Pencil, Check, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,14 @@ export default function MealRecordPage() {
   // Edit mode for analyzed foods
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<AnalyzedFood | null>(null);
+  const [searchReplaceIndex, setSearchReplaceIndex] = useState<number | null>(null);
+  const [foodSearchQuery, setFoodSearchQuery] = useState("");
+
+  const searchReplaceFoods = useMemo(() => {
+    if (!foodSearchQuery.trim()) return foodDatabase.slice(0, 20);
+    const q = foodSearchQuery.trim().toLowerCase();
+    return foodDatabase.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 30);
+  }, [foodSearchQuery]);
 
   const filteredFoods = useMemo(() => {
     let list = foodDatabase;
@@ -170,6 +178,28 @@ export default function MealRecordPage() {
   const cancelEditing = () => {
     setEditingIndex(null);
     setEditForm(null);
+    setSearchReplaceIndex(null);
+    setFoodSearchQuery("");
+  };
+
+  const handleReplaceFood = (index: number, food: typeof foodDatabase[0]) => {
+    setAnalyzedFoods((prev) => {
+      const next = [...prev];
+      next[index] = {
+        name: food.name,
+        serving_size: food.serving_size,
+        carbs: food.carbs,
+        protein: food.protein,
+        fat: food.fat,
+        calories: food.calories,
+      };
+      recalcTotals(next);
+      return next;
+    });
+    setSearchReplaceIndex(null);
+    setFoodSearchQuery("");
+    setEditingIndex(null);
+    setEditForm(null);
   };
 
   const handlePhotoSelect = useCallback(async (file: File) => {
@@ -192,6 +222,8 @@ export default function MealRecordPage() {
     setPhotoTotalCalories(0);
     setEditingIndex(null);
     setEditForm(null);
+    setSearchReplaceIndex(null);
+    setFoodSearchQuery("");
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -595,11 +627,49 @@ export default function MealRecordPage() {
                           <Button size="sm" variant="ghost" onClick={cancelEditing} className="h-7 text-xs">
                             취소
                           </Button>
+                          <Button size="sm" variant="outline" onClick={() => { setSearchReplaceIndex(editingIndex); setFoodSearchQuery(""); }} className="h-7 text-xs text-orange-600 border-orange-300">
+                            <Search className="size-3 mr-1" />
+                            DB 검색
+                          </Button>
                           <Button size="sm" onClick={saveEditing} className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white">
                             <Check className="size-3 mr-1" />
                             저장
                           </Button>
                         </div>
+                        {searchReplaceIndex === editingIndex && (
+                          <div className="mt-2 border border-orange-200 dark:border-orange-800 rounded-lg overflow-hidden">
+                            <div className="p-2 bg-orange-50 dark:bg-orange-950/40">
+                              <Input
+                                value={foodSearchQuery}
+                                onChange={(e) => setFoodSearchQuery(e.target.value)}
+                                placeholder="음식 이름 검색..."
+                                className="h-8 text-sm"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="max-h-48 overflow-y-auto">
+                              {searchReplaceFoods.map((food) => (
+                                <button
+                                  key={food.id}
+                                  onClick={() => handleReplaceFood(editingIndex!, food)}
+                                  className="w-full flex items-center justify-between py-2 px-3 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors text-left border-t border-border/50"
+                                >
+                                  <div>
+                                    <span className="text-sm font-medium">{food.name}</span>
+                                    <span className="text-xs text-muted-foreground ml-1.5">{food.serving_size}</span>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span className="text-sm font-semibold text-orange-600">{food.carbs}g</span>
+                                    <span className="text-xs text-muted-foreground ml-1">{food.calories}kcal</span>
+                                  </div>
+                                </button>
+                              ))}
+                              {searchReplaceFoods.length === 0 && (
+                                <p className="text-xs text-muted-foreground text-center py-3">검색 결과 없음</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       // Display mode
