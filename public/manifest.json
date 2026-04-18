@@ -1,13 +1,15 @@
 {
-  "name": "당비서 - 당뇨 관리 앱",
+  "name": "당비서 - 24시간 함께하는 당뇨 관리 비서",
   "short_name": "당비서",
-  "description": "1형 당뇨 환자를 위한 통합 관리 솔루션",
+  "description": "늘 여러분의 곁에서 24시간 여러분을 지키는 당비서. AI 식단 분석, 혈당 기록, 인슐린 관리까지 한 번에.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#0d9488",
   "theme_color": "#0d9488",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/api/icon?size=192", "sizes": "192x192", "type": "image/png" },
+    { "src": "/api/icon?size=512", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
   ]
 }
