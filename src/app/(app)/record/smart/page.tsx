@@ -40,9 +40,9 @@ interface ParsedRecords {
 
 // ── Label maps ──
 
-const timingLabels: Record<string, string> = { fasting: "공복", before_meal: "식전", after_meal: "식후", before_exercise: "운동 전", after_exercise: "운동 후", before_sleep: "취침 전", other: "기타" };
+const timingLabels: Record<string, string> = { fasting: "공복", before_meal: "식전", after_meal: "식후", before_exercise: "운동 전", after_exercise: "운동 후", before_sleep: "취침 전", other: "상시" };
 const mealTypeLabels: Record<string, string> = { breakfast: "아침", lunch: "점심", dinner: "저녁", snack: "간식" };
-const exerciseTypeLabels: Record<string, string> = { weight: "웨이트", cardio: "유산소", swimming: "수영", dance: "댄스", martial_arts: "격투기", yoga: "요가", walking: "걷기", cycling: "자전거", other: "기타" };
+const exerciseTypeLabels: Record<string, string> = { weight: "웨이트", cardio: "유산소", swimming: "수영", dance: "댄스", martial_arts: "격투기", yoga: "요가", walking: "걷기", cycling: "자전거", other: "상시" };
 const intensityLabels: Record<string, string> = { low: "가벼움", moderate: "보통", high: "격렬" };
 const moodLabels: Record<string, string> = { great: "최고 😄", good: "좋음 😊", neutral: "보통 😐", bad: "나쁨 😔", terrible: "최악 😢" };
 const siteLabels: Record<string, string> = { abdomen: "배", thigh: "허벅지", arm: "팔", hip: "엉덩이" };

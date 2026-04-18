@@ -17,7 +17,7 @@ const PARSE_PROMPT = `당신은 당뇨 환자의 하루 건강 기록을 텍스�
 
 ### glucose (혈당)
 - 키워드: 혈당, 당수치, mg/dL, 공복, 식전, 식후, 취침전, 당체크
-- timing: fasting(공복), before_meal(식전), after_meal(식후), before_exercise(운동전), after_exercise(운동후), before_sleep(취침전), other(기타)
+- timing: fasting(공복), before_meal(식전), after_meal(식후), before_exercise(운동전), after_exercise(운동후), before_sleep(취침전), other(상시/일반 측정)
 - 숫자만 있어도 맥락상 혈당이면 추출 (예: "10시ㅡ72" → 혈당 72)
 
 ### insulin (인슐린)
