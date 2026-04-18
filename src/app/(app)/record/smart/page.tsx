@@ -115,10 +115,17 @@ export default function SmartRecordPage() {
     setSaved(false);
 
     try {
+      // Preprocess: normalize separators for better AI parsing
+      const cleaned = text.trim()
+        .replace(/ㅡ/g, ", ")
+        .replace(/[-–—]/g, ", ")
+        .replace(/\s*,\s*,\s*/g, ", ")
+        .replace(/\s{2,}/g, " ");
+
       const res = await fetch("/api/record/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim() }),
+        body: JSON.stringify({ text: cleaned }),
       });
 
       if (!res.ok) throw new Error("분석 실패");

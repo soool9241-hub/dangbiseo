@@ -27,11 +27,16 @@ const PARSE_PROMPT = `당신은 당뇨 환자의 하루 건강 기록을 텍스�
 - injection_site: abdomen(배), thigh(허벅지), arm(팔), hip(엉덩이) - 없으면 "abdomen"
 
 ### meal (식단)
-- 키워드: 식사, 먹었, 아침, 점심, 저녁, 간식, 음식 이름
+- 키워드: 식사, 식시, 먹었, 아침, 점심, 저녁, 간식, 음식 이름
 - meal_type: breakfast(아침/오전식사), lunch(점심), dinner(저녁), snack(간식/간단한 음식)
-- 간식류(떡, 빵, 과자, 음료, 두유, 라떼 등)도 반드시 meal로 추출! meal_type은 "snack"
-- 탄수화물(g), 칼로리(kcal) 추정
-- note에 음식 이름 기재
+- **음식 이름이 나오면 무조건 meal로 추출!**
+  - 버터떡, 떡, 빵, 과자, 라면, 순두부, 김치찌개 등 = meal
+  - 두유, 라떼, 라때, 커피, 음료, 주스 등 음료류 = meal (snack)
+  - "식사", "식시" = meal (구체적 메뉴 없어도 추출)
+- 간식 판단: 식사 시간(7시/12시/18시 근처) 아니면 snack
+- 탄수화물(g), 칼로리(kcal) 한국 음식 기준으로 정확하게 추정
+- note에 음식 이름 반드시 기재
+- **절대 누락 금지**: 텍스트에 음식 이름이 있으면 반드시 meal 배열에 포함
 
 ### exercise (운동)
 - exercise_type: weight/cardio/swimming/dance/martial_arts/yoga/walking/cycling/other
