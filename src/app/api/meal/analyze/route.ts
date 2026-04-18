@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -40,9 +40,9 @@ const ANALYSIS_PROMPT = `당신은 음식 사진을 분석하는 영양 전문�
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
+      return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 });
     }
 
     const body = await request.json();
@@ -52,26 +52,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-lite',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
+    const base64Data = image.replace(/^data:[^;]+;base64,/, '');
+    const mediaType = (mimeType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+    const client = new Anthropic({ apiKey });
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: ANALYSIS_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType,
+                data: base64Data,
+              },
+            },
+            {
+              type: 'text',
+              text: '이 음식 사진을 분석해주세요.',
+            },
+          ],
+        },
+      ],
     });
 
-    const result = await model.generateContent([
-      { text: ANALYSIS_PROMPT },
-      {
-        inlineData: {
-          data: image.replace(/^data:[^;]+;base64,/, ''),
-          mimeType: mimeType || 'image/jpeg',
-        },
-      },
-    ]);
-
-    const text = result.response.text();
+    const text = message.content[0].type === 'text' ? message.content[0].text : '';
 
     let parsed;
     try {

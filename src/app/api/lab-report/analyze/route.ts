@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -48,9 +48,9 @@ const ANALYSIS_PROMPT = `당신은 의료 검사 결과지를 분석하는 전�
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
+      return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 });
     }
 
     const body = await request.json();
@@ -68,43 +68,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-lite',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    });
-
-    let prompt = ANALYSIS_PROMPT;
+    let systemPrompt = ANALYSIS_PROMPT;
     if (previousValues && Array.isArray(previousValues) && previousValues.length > 0) {
-      prompt += `\n\n이전 회차 검사 결과(참고용):\n${JSON.stringify(previousValues, null, 2)}\n\n이번 결과와 비교해서 "comparison_note" 필드에 주요 변화를 서술하세요.`;
+      systemPrompt += `\n\n이전 회차 검사 결과(참고용):\n${JSON.stringify(previousValues, null, 2)}\n\n이번 결과와 비교해서 "comparison_note" 필드에 주요 변화를 서술하세요.`;
     }
 
-    const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-      { text: prompt },
-    ];
+    const contentParts: Anthropic.Messages.ContentBlockParam[] = [];
 
     for (const f of files) {
-      parts.push({
-        inlineData: {
-          data: f.data.replace(/^data:[^;]+;base64,/, ''),
-          mimeType: f.mimeType || 'image/jpeg',
+      const base64Data = f.data.replace(/^data:[^;]+;base64,/, '');
+      const mediaType = (f.mimeType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+      contentParts.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: mediaType,
+          data: base64Data,
         },
       });
     }
 
-    const result = await model.generateContent(parts);
+    contentParts.push({
+      type: 'text',
+      text: '이 검사 결과지를 분석해주세요.',
+    });
 
-    const response = result.response;
-    const text = response.text();
+    const client = new Anthropic({ apiKey });
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: contentParts },
+      ],
+    });
+
+    const text = message.content[0].type === 'text' ? message.content[0].text : '';
 
     let parsed;
     try {
       parsed = JSON.parse(text);
     } catch {
-      // Try to extract JSON from markdown code block
       const jsonMatch = text.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
       if (jsonMatch) {
         parsed = JSON.parse(jsonMatch[1]);

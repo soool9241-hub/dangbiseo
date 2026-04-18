@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -64,9 +64,9 @@ const PARSE_PROMPT = `당신은 당뇨 환자의 건강 기록을 텍스트에�
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
+      return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 });
     }
 
     const body = await request.json();
@@ -78,26 +78,22 @@ export async function POST(request: Request) {
 
     let systemPrompt = PARSE_PROMPT;
 
-    // If a specific type is given, focus on that type only
     if (type && ['glucose', 'insulin', 'meal', 'exercise', 'mood'].includes(type)) {
       systemPrompt += `\n\n추가 지시: 이 텍스트는 "${type}" 기록을 위한 입력입니다. "${type}" 유형에 집중하여 분석하세요. 다른 유형도 명확히 언급되어 있다면 함께 추출하세요.`;
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-lite',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
+    const client = new Anthropic({ apiKey });
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: `사용자 입력: ${text.trim()}` },
+      ],
     });
 
-    const result = await model.generateContent([
-      { text: systemPrompt },
-      { text: `사용자 입력: ${text.trim()}` },
-    ]);
-
-    const responseText = result.response.text();
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
 
     let parsed;
     try {
