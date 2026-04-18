@@ -8,9 +8,13 @@ import { useRecordsStore } from '@/stores/records-store';
 // 2분 이내 같은 데이터가 있으면 중복으로 판단
 const DEDUP_WINDOW_MS = 2 * 60 * 1000;
 
+// 모듈 레벨에 선언하여 클로저 문제 방지
+function isTimeSimilar(t1: string, t2: string): boolean {
+  return Math.abs(new Date(t1).getTime() - new Date(t2).getTime()) < DEDUP_WINDOW_MS;
+}
+
 export function useSupabaseSync() {
   const { user, supabase } = useAuth();
-  const store = useRecordsStore();
   const configured = isSupabaseConfigured();
   const fetchedRef = useRef(false);
   // ref 기반 중복 클릭 방지 (React state보다 빠름)
@@ -18,11 +22,11 @@ export function useSupabaseSync() {
 
   const fetchAll = useCallback(async () => {
     if (!user || !configured) {
-      store.setLoading(false);
+      useRecordsStore.getState().setLoading(false);
       return;
     }
 
-    store.setLoading(true);
+    useRecordsStore.getState().setLoading(true);
 
     try {
       const [
@@ -48,7 +52,7 @@ export function useSupabaseSync() {
       if (insulinRes.error) console.error('[fetchAll] Insulin error:', insulinRes.error);
 
       if (profileRes.data) {
-        store.setProfile({
+        useRecordsStore.getState().setProfile({
           ...profileRes.data,
           preferred_insulins: profileRes.data.preferred_insulins || [],
         });
@@ -67,9 +71,9 @@ export function useSupabaseSync() {
       fetchedRef.current = true;
     } catch (err) {
       console.error('[fetchAll] Unexpected error:', err);
-      store.setLoading(false);
+      useRecordsStore.getState().setLoading(false);
     }
-  }, [user, configured, supabase, store]);
+  }, [user, configured, supabase]);
 
   useEffect(() => {
     fetchedRef.current = false;
@@ -84,12 +88,6 @@ export function useSupabaseSync() {
       return () => clearTimeout(timer);
     }
   }, [user, configured, fetchAll]);
-
-  // ========== 중복 체크 헬퍼 ==========
-  // 같은 시간대(±2분) + 같은 핵심 값이면 중복으로 판단
-  function isTimeSimilar(t1: string, t2: string): boolean {
-    return Math.abs(new Date(t1).getTime() - new Date(t2).getTime()) < DEDUP_WINDOW_MS;
-  }
 
   // ========== 저장 함수들 (중복 방지 적용) ==========
 
@@ -330,10 +328,11 @@ export function useSupabaseSync() {
     }
   }, [user, supabase]);
 
-  const updateProfile = useCallback(async (updates: Partial<typeof store.profile>) => {
-    store.setProfile(updates);
+  const updateProfile = useCallback(async (updates: Record<string, unknown>) => {
+    const currentStore = useRecordsStore.getState();
+    currentStore.setProfile(updates);
     if (user) {
-      const merged = { ...store.profile, ...updates };
+      const merged = { ...currentStore.profile, ...updates };
       const { error } = await supabase.from('profiles').upsert({
         id: user.id,
         display_name: merged.display_name,
@@ -354,10 +353,10 @@ export function useSupabaseSync() {
       });
       if (error) console.error('[updateProfile] Upsert error:', error);
     }
-  }, [user, store, supabase]);
+  }, [user, supabase]);
 
   const deleteRecord = useCallback(async (type: string, id: string) => {
-    store.deleteRecord(type, id);
+    useRecordsStore.getState().deleteRecord(type, id);
     if (user) {
       const tableMap: Record<string, string> = {
         glucose: 'glucose_records',
@@ -373,7 +372,7 @@ export function useSupabaseSync() {
         if (error) console.error(`[deleteRecord] Delete error (${type}):`, error);
       }
     }
-  }, [user, store, supabase]);
+  }, [user, supabase]);
 
   return {
     addGlucoseRecord,
