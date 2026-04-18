@@ -39,17 +39,24 @@ const PARSE_PROMPT = `당신은 당뇨 환자의 건강 기록을 텍스트에�
 - factors: work(업무), sleep(수면), exercise(운동), relationship(관계), food(음식), weather(날씨), glucose(혈당), other(기타)
 - 예: "오늘 기분 좋아 스트레스 없음" → mood: "good", stress_level: 1
 
+## 시간 인식 규칙
+- 텍스트에서 시간 정보를 추출하세요
+- "아침 7시", "오후 3시", "저녁 6시반", "10시", "14:30" 등 다양한 형식 인식
+- "아침"=07:00, "점심"=12:00, "저녁"=18:00, "취침전"=22:00 등 키워드로도 추정
+- "어제", "오늘 아침", "방금" 등의 상대 시간도 인식
+- 시간이 언급되지 않으면 time 필드는 null
+
 ## 응답 형식
 
 반드시 아래 JSON 형식으로만 응답하세요:
 
 {
   "records": {
-    "glucose": null 또는 { "value": 120, "timing": "fasting", "source": "manual", "note": null },
-    "insulin": null 또는 { "insulin_name": "노보래피드", "insulin_type": "rapid", "dose": 4, "injection_site": "abdomen", "note": null },
-    "meal": null 또는 { "meal_type": "lunch", "total_carbs": 75, "total_calories": 450, "note": "김치찌개, 밥" },
-    "exercise": null 또는 { "exercise_type": "walking", "duration_minutes": 30, "intensity": "low", "calories_burned": null, "carb_supplement": null, "note": null },
-    "mood": null 또는 { "mood": "good", "stress_level": 2, "factors": ["work"], "note": null }
+    "glucose": null 또는 { "value": 120, "timing": "fasting", "source": "manual", "note": null, "time": "07:00" },
+    "insulin": null 또는 { "insulin_name": "노보래피드", "insulin_type": "rapid", "dose": 4, "injection_site": "abdomen", "note": null, "time": "07:30" },
+    "meal": null 또는 { "meal_type": "lunch", "total_carbs": 75, "total_calories": 450, "note": "김치찌개, 밥", "time": "12:00" },
+    "exercise": null 또는 { "exercise_type": "walking", "duration_minutes": 30, "intensity": "low", "calories_burned": null, "carb_supplement": null, "note": null, "time": "17:00" },
+    "mood": null 또는 { "mood": "good", "stress_level": 2, "factors": ["work"], "note": null, "time": null }
   },
   "summary": "인식된 내용 요약 (한글, 1줄)"
 }
@@ -57,6 +64,7 @@ const PARSE_PROMPT = `당신은 당뇨 환자의 건강 기록을 텍스트에�
 ## 중요 규칙
 - 텍스트에서 언급되지 않은 기록 유형은 null
 - 숫자 값은 number 타입
+- time 필드는 "HH:mm" 형식 (24시간제). 시간 정보 없으면 null
 - 한국 음식 영양 정보는 정확하게
 - 애매한 경우 합리적으로 추정
 - JSON 외의 텍스트 절대 금지

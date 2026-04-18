@@ -15,6 +15,7 @@ import {
   Check,
   X,
   MessageSquareText,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSync } from "@/components/shared/SupabaseSyncProvider";
@@ -107,10 +108,10 @@ const siteLabels: Record<string, string> = {
 };
 
 const exampleTexts = [
-  "아침 공복혈당 110, 노보래피드 4단위 배에 맞고 밥이랑 된장찌개 먹음",
-  "점심에 김치볶음밥 먹고 30분 걸었어 기분 좋음",
-  "저녁 식후혈당 180, 트레시바 10단위",
-  "간식으로 사과 하나 먹음 컨디션 보통",
+  "아침 7시 공복혈당 110, 노보래피드 4단위 배에 맞고 밥이랑 된장찌개 먹음",
+  "점심 12시 김치볶음밥 먹고 오후2시에 30분 걸었어 기분 좋음",
+  "저녁 7시 식후혈당 180, 트레시바 10단위 허벅지",
+  "오후 3시 간식으로 사과 하나 먹음 컨디션 보통",
 ];
 
 export default function SmartRecordPage() {
@@ -166,9 +167,16 @@ export default function SmartRecordPage() {
     setSaving(true);
 
     const now = new Date();
-    const isoNow = new Date(
-      now.getTime() - now.getTimezoneOffset() * 60000
-    ).toISOString().slice(0, 16);
+
+    // Helper: build ISO datetime from parsed time or fallback to now
+    function buildIso(parsedTime: string | null | undefined): string {
+      const base = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      if (parsedTime && /^\d{2}:\d{2}$/.test(parsedTime)) {
+        const [h, m] = parsedTime.split(":").map(Number);
+        base.setHours(h, m, 0, 0);
+      }
+      return base.toISOString().slice(0, 16);
+    }
 
     let count = 0;
 
@@ -176,7 +184,7 @@ export default function SmartRecordPage() {
       if (selected.glucose && parsed.glucose) {
         await sync.addGlucoseRecord({
           value: parsed.glucose.value,
-          measured_at: isoNow,
+          measured_at: buildIso((parsed.glucose as Record<string, unknown>).time as string | null),
           source: parsed.glucose.source || "manual",
           timing: parsed.glucose.timing || "fasting",
           note: parsed.glucose.note || "[AI 텍스트 인식]",
@@ -189,7 +197,7 @@ export default function SmartRecordPage() {
           insulin_name: parsed.insulin.insulin_name,
           insulin_type: parsed.insulin.insulin_type || "rapid",
           dose: parsed.insulin.dose,
-          injected_at: isoNow,
+          injected_at: buildIso((parsed.insulin as Record<string, unknown>).time as string | null),
           injection_site: parsed.insulin.injection_site || "abdomen",
           note: parsed.insulin.note || "[AI 텍스트 인식]",
         });
@@ -199,7 +207,7 @@ export default function SmartRecordPage() {
       if (selected.meal && parsed.meal) {
         await sync.addMealRecord({
           meal_type: parsed.meal.meal_type || "lunch",
-          eaten_at: isoNow,
+          eaten_at: buildIso((parsed.meal as Record<string, unknown>).time as string | null),
           total_carbs: parsed.meal.total_carbs,
           total_calories: parsed.meal.total_calories,
           photo_url: null,
@@ -215,7 +223,7 @@ export default function SmartRecordPage() {
           intensity: parsed.exercise.intensity || "moderate",
           steps: null,
           calories_burned: parsed.exercise.calories_burned,
-          started_at: isoNow,
+          started_at: buildIso((parsed.exercise as Record<string, unknown>).time as string | null),
           glucose_before: null,
           glucose_after: null,
           carb_supplement: parsed.exercise.carb_supplement,
@@ -230,7 +238,7 @@ export default function SmartRecordPage() {
           stress_level: parsed.mood.stress_level || 3,
           factors: parsed.mood.factors || [],
           note: parsed.mood.note || "[AI 텍스트 인식]",
-          recorded_at: isoNow,
+          recorded_at: buildIso((parsed.mood as Record<string, unknown>).time as string | null),
         });
         count++;
       }
@@ -338,113 +346,103 @@ export default function SmartRecordPage() {
             </div>
           )}
 
-          {/* Glucose */}
-          {parsed.glucose && (
-            <RecordCard
-              selected={!!selected.glucose}
-              onToggle={() => toggleSelect("glucose")}
-              icon={<Droplets className="size-5" />}
-              color="teal"
-              title="혈당"
-              disabled={saved}
-            >
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold">{parsed.glucose.value}</span>
-                <span className="text-xs text-muted-foreground">mg/dL</span>
-              </div>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
-                {timingLabels[parsed.glucose.timing] || parsed.glucose.timing}
-              </span>
-            </RecordCard>
-          )}
+          {/* Records sorted by time */}
+          {(() => {
+            const items: { key: string; time: string | null; node: React.ReactNode }[] = [];
 
-          {/* Insulin */}
-          {parsed.insulin && (
-            <RecordCard
-              selected={!!selected.insulin}
-              onToggle={() => toggleSelect("insulin")}
-              icon={<Syringe className="size-5" />}
-              color="blue"
-              title="인슐린"
-              disabled={saved}
-            >
-              <div className="flex items-baseline gap-2">
-                <span className="text-lg font-bold">{parsed.insulin.insulin_name}</span>
-                <span className="text-2xl font-bold">{parsed.insulin.dose}<span className="text-sm">U</span></span>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {siteLabels[parsed.insulin.injection_site] || parsed.insulin.injection_site}
-              </span>
-            </RecordCard>
-          )}
+            if (parsed.glucose) {
+              const t = (parsed.glucose as Record<string, unknown>).time as string | null;
+              items.push({ key: "glucose", time: t, node: (
+                <RecordCard key="glucose" selected={!!selected.glucose} onToggle={() => toggleSelect("glucose")} icon={<Droplets className="size-5" />} color="teal" title="혈당" disabled={saved} time={t}>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold">{parsed.glucose.value}</span>
+                    <span className="text-xs text-muted-foreground">mg/dL</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
+                    {timingLabels[parsed.glucose.timing] || parsed.glucose.timing}
+                  </span>
+                </RecordCard>
+              )});
+            }
 
-          {/* Meal */}
-          {parsed.meal && (
-            <RecordCard
-              selected={!!selected.meal}
-              onToggle={() => toggleSelect("meal")}
-              icon={<UtensilsCrossed className="size-5" />}
-              color="orange"
-              title="식단"
-              disabled={saved}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
-                  {mealTypeLabels[parsed.meal.meal_type] || parsed.meal.meal_type}
-                </span>
-                <span className="text-lg font-bold">{parsed.meal.total_carbs}g</span>
-                {parsed.meal.total_calories && (
-                  <span className="text-xs text-muted-foreground">{parsed.meal.total_calories}kcal</span>
-                )}
-              </div>
-              {parsed.meal.note && (
-                <p className="text-xs text-muted-foreground mt-0.5">{parsed.meal.note}</p>
-              )}
-            </RecordCard>
-          )}
+            if (parsed.insulin) {
+              const t = (parsed.insulin as Record<string, unknown>).time as string | null;
+              items.push({ key: "insulin", time: t, node: (
+                <RecordCard key="insulin" selected={!!selected.insulin} onToggle={() => toggleSelect("insulin")} icon={<Syringe className="size-5" />} color="blue" title="인슐린" disabled={saved} time={t}>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold">{parsed.insulin.insulin_name}</span>
+                    <span className="text-2xl font-bold">{parsed.insulin.dose}<span className="text-sm">U</span></span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {siteLabels[parsed.insulin.injection_site] || parsed.insulin.injection_site}
+                  </span>
+                </RecordCard>
+              )});
+            }
 
-          {/* Exercise */}
-          {parsed.exercise && (
-            <RecordCard
-              selected={!!selected.exercise}
-              onToggle={() => toggleSelect("exercise")}
-              icon={<Dumbbell className="size-5" />}
-              color="green"
-              title="운동"
-              disabled={saved}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold">
-                  {exerciseTypeLabels[parsed.exercise.exercise_type] || parsed.exercise.exercise_type}
-                </span>
-                <span className="text-sm">{parsed.exercise.duration_minutes}분</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">
-                  {intensityLabels[parsed.exercise.intensity] || parsed.exercise.intensity}
-                </span>
-              </div>
-            </RecordCard>
-          )}
+            if (parsed.meal) {
+              const t = (parsed.meal as Record<string, unknown>).time as string | null;
+              items.push({ key: "meal", time: t, node: (
+                <RecordCard key="meal" selected={!!selected.meal} onToggle={() => toggleSelect("meal")} icon={<UtensilsCrossed className="size-5" />} color="orange" title="식단" disabled={saved} time={t}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
+                      {mealTypeLabels[parsed.meal.meal_type] || parsed.meal.meal_type}
+                    </span>
+                    <span className="text-lg font-bold">{parsed.meal.total_carbs}g</span>
+                    {parsed.meal.total_calories && (
+                      <span className="text-xs text-muted-foreground">{parsed.meal.total_calories}kcal</span>
+                    )}
+                  </div>
+                  {parsed.meal.note && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{parsed.meal.note}</p>
+                  )}
+                </RecordCard>
+              )});
+            }
 
-          {/* Mood */}
-          {parsed.mood && (
-            <RecordCard
-              selected={!!selected.mood}
-              onToggle={() => toggleSelect("mood")}
-              icon={<Heart className="size-5" />}
-              color="pink"
-              title="기분"
-              disabled={saved}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold">
-                  {moodLabels[parsed.mood.mood] || parsed.mood.mood}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  스트레스 {parsed.mood.stress_level}/5
-                </span>
-              </div>
-            </RecordCard>
-          )}
+            if (parsed.exercise) {
+              const t = (parsed.exercise as Record<string, unknown>).time as string | null;
+              items.push({ key: "exercise", time: t, node: (
+                <RecordCard key="exercise" selected={!!selected.exercise} onToggle={() => toggleSelect("exercise")} icon={<Dumbbell className="size-5" />} color="green" title="운동" disabled={saved} time={t}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-lg font-bold">
+                      {exerciseTypeLabels[parsed.exercise.exercise_type] || parsed.exercise.exercise_type}
+                    </span>
+                    <span className="text-sm">{parsed.exercise.duration_minutes}분</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">
+                      {intensityLabels[parsed.exercise.intensity] || parsed.exercise.intensity}
+                    </span>
+                  </div>
+                </RecordCard>
+              )});
+            }
+
+            if (parsed.mood) {
+              const t = (parsed.mood as Record<string, unknown>).time as string | null;
+              items.push({ key: "mood", time: t, node: (
+                <RecordCard key="mood" selected={!!selected.mood} onToggle={() => toggleSelect("mood")} icon={<Heart className="size-5" />} color="pink" title="기분" disabled={saved} time={t}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-lg font-bold">
+                      {moodLabels[parsed.mood.mood] || parsed.mood.mood}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      스트레스 {parsed.mood.stress_level}/5
+                    </span>
+                  </div>
+                </RecordCard>
+              )});
+            }
+
+            // Sort by time (earliest first), null time goes last
+            items.sort((a, b) => {
+              if (!a.time && !b.time) return 0;
+              if (!a.time) return 1;
+              if (!b.time) return -1;
+              return a.time.localeCompare(b.time);
+            });
+
+            return items.map((item) => item.node);
+          })()}
 
           {/* No records found */}
           {!parsed.glucose && !parsed.insulin && !parsed.meal && !parsed.exercise && !parsed.mood && (
@@ -517,6 +515,7 @@ function RecordCard({
   color,
   title,
   disabled,
+  time,
   children,
 }: {
   selected: boolean;
@@ -524,6 +523,7 @@ function RecordCard({
   icon: React.ReactNode;
   color: string;
   title: string;
+  time?: string | null;
   disabled: boolean;
   children: React.ReactNode;
 }) {
@@ -571,7 +571,15 @@ function RecordCard({
           {icon}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground mb-1">{title}</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs font-medium text-muted-foreground">{title}</p>
+            {time && (
+              <span className="text-[11px] font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-0.5 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded-full">
+                <Clock className="size-3" />
+                {time}
+              </span>
+            )}
+          </div>
           {children}
         </div>
         <div
