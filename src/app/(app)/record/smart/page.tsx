@@ -161,15 +161,13 @@ export default function SmartRecordPage() {
     if (saving) return;
     setSaving(true);
 
-    const now = new Date();
-
     function buildIso(parsedTime: string | null | undefined): string {
-      const base = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      const d = new Date();
       if (parsedTime && /^\d{2}:\d{2}$/.test(parsedTime)) {
         const [h, m] = parsedTime.split(":").map(Number);
-        base.setHours(h, m, 0, 0);
+        d.setHours(h, m, 0, 0);
       }
-      return base.toISOString().slice(0, 16);
+      return d.toISOString();
     }
 
     let count = 0;

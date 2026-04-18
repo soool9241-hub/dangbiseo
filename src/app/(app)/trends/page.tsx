@@ -41,10 +41,15 @@ export default function TrendsPage() {
 
   const glucoseChartData = useMemo(
     () =>
-      filteredGlucose.map((r) => ({
-        time: format(new Date(r.measured_at), period === "24h" ? "HH:mm" : "M/d HH:mm", { locale: ko }),
-        value: r.value,
-      })),
+      filteredGlucose.map((r) => {
+        const d = new Date(r.measured_at);
+        return {
+          time: format(d, period === "24h" ? "HH:mm" : "M/d HH:mm", { locale: ko }),
+          value: r.value,
+          minuteOfDay: d.getHours() * 60 + d.getMinutes(),
+          timestamp: d.getTime(),
+        };
+      }),
     [filteredGlucose, period]
   );
 
@@ -165,11 +170,27 @@ export default function TrendsPage() {
                 <ResponsiveContainer width="100%" height={220}>
                   <LineChart data={glucoseChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                    {period === "24h" ? (
+                      <XAxis
+                        dataKey="minuteOfDay"
+                        type="number"
+                        domain={[0, 1440]}
+                        ticks={[0, 180, 360, 540, 720, 900, 1080, 1260, 1440]}
+                        tickFormatter={(v: number) => `${Math.floor(v / 60)}시`}
+                        tick={{ fontSize: 10 }}
+                      />
+                    ) : (
+                      <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                    )}
                     <YAxis domain={[40, 300]} tick={{ fontSize: 11 }} />
-                    <Tooltip />
+                    <Tooltip
+                      labelFormatter={(_, payload) => {
+                        if (payload?.[0]?.payload?.time) return payload[0].payload.time;
+                        return "";
+                      }}
+                    />
                     <ReferenceArea y1={targetMin} y2={targetMax} fill="#22c55e" fillOpacity={0.1} />
-                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="혈당" />
+                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="혈당" connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
