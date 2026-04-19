@@ -136,15 +136,15 @@ export default function TrendsPage() {
     <div className="space-y-4 py-6">
       <h1 className="text-2xl font-bold">트렌드 분석</h1>
 
-      <Tabs defaultValue={0}>
+      <Tabs defaultValue="glucose">
         <TabsList className="w-full">
-          <TabsTrigger value={0}><Activity className="mr-1 size-4" />혈당</TabsTrigger>
-          <TabsTrigger value={1}><BarChart3 className="mr-1 size-4" />인슐린</TabsTrigger>
-          <TabsTrigger value={2}><TrendingUp className="mr-1 size-4" />종합</TabsTrigger>
+          <TabsTrigger value="glucose"><Activity className="mr-1 size-4" />혈당</TabsTrigger>
+          <TabsTrigger value="insulin"><BarChart3 className="mr-1 size-4" />인슐린</TabsTrigger>
+          <TabsTrigger value="composite"><TrendingUp className="mr-1 size-4" />종합</TabsTrigger>
         </TabsList>
 
         {/* 혈당 Tab */}
-        <TabsContent value={0} className="space-y-4 pt-4">
+        <TabsContent value="glucose" className="space-y-4 pt-4">
           {/* Period selector */}
           <div className="flex gap-1">
             {(Object.keys(periodConfig) as Period[]).map((p) => (
@@ -260,7 +260,7 @@ export default function TrendsPage() {
         </TabsContent>
 
         {/* 인슐린 Tab */}
-        <TabsContent value={1} className="space-y-4 pt-4">
+        <TabsContent value="insulin" className="space-y-4 pt-4">
           <div className="flex gap-1">
             {(Object.keys(periodConfig) as Period[]).map((p) => (
               <Button
@@ -307,7 +307,7 @@ export default function TrendsPage() {
         </TabsContent>
 
         {/* 종합 Tab */}
-        <TabsContent value={2} className="space-y-4 pt-4">
+        <TabsContent value="composite" className="space-y-4 pt-4">
           <div className="flex gap-1">
             {(Object.keys(periodConfig) as Period[]).map((p) => (
               <Button
