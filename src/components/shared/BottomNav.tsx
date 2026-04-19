@@ -26,7 +26,7 @@ export function BottomNav() {
     <nav
       className={cn(
         "fixed bottom-0 left-0 right-0 z-[55]",
-        "border-t border-border/40 bg-background/80 backdrop-blur-xl",
+        "border-t border-border/40 bg-background",
         "pb-[env(safe-area-inset-bottom)]"
       )}
     >

@@ -80,15 +80,6 @@ export function useSupabaseSync() {
     fetchAll();
   }, [fetchAll]);
 
-  useEffect(() => {
-    if (user && configured && !fetchedRef.current) {
-      const timer = setTimeout(() => {
-        if (!fetchedRef.current) fetchAll();
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [user, configured, fetchAll]);
-
   // ========== 저장 함수들 (중복 방지 적용) ==========
 
   const addGlucoseRecord = useCallback(async (record: { value: number; measured_at: string; source: string; timing: string; note: string | null }) => {
