@@ -4,12 +4,17 @@ import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { Sun, Moon } from "lucide-react";
 import { useTheme } from "next-themes";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { TodaySummary } from "@/components/dashboard/TodaySummary";
-import { DailyGlucoseChart } from "@/components/dashboard/DailyGlucoseChart";
 import { useRecordsStore } from "@/stores/records-store";
 import { useMemo } from "react";
 import { isToday } from "date-fns";
+
+const DailyGlucoseChart = dynamic(
+  () => import("@/components/dashboard/DailyGlucoseChart").then((m) => ({ default: m.DailyGlucoseChart })),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse rounded-xl bg-muted" /> }
+);
 
 export default function DashboardPage() {
   const { theme, setTheme } = useTheme();
