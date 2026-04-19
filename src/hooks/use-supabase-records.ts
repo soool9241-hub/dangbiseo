@@ -16,69 +16,94 @@ function isTimeSimilar(t1: string, t2: string): boolean {
 export function useSupabaseSync() {
   const { user, supabase } = useAuth();
   const configured = isSupabaseConfigured();
-  const fetchedRef = useRef(false);
+  // 물리적 가드: in-flight Promise + 마지막 성공한 user.id + 마지막 시도 시각
+  const inFlightRef = useRef<Promise<void> | null>(null);
+  const fetchedUserIdRef = useRef<string | null>(null);
+  const lastAttemptRef = useRef<number>(0);
   // ref 기반 중복 클릭 방지 (React state보다 빠름)
   const savingRef = useRef<Record<string, boolean>>({});
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (): Promise<void> => {
     if (!user || !configured) {
       useRecordsStore.getState().setLoading(false);
       return;
     }
 
-    useRecordsStore.getState().setLoading(true);
-
-    try {
-      const [
-        profileRes,
-        glucoseRes,
-        insulinRes,
-        mealsRes,
-        exerciseRes,
-        moodRes,
-        hba1cRes,
-      ] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('glucose_records').select('*').eq('user_id', user.id).order('measured_at', { ascending: false }),
-        supabase.from('insulin_records').select('*').eq('user_id', user.id).order('injected_at', { ascending: false }),
-        supabase.from('meal_records').select('*').eq('user_id', user.id).order('eaten_at', { ascending: false }),
-        supabase.from('exercise_records').select('*').eq('user_id', user.id).order('started_at', { ascending: false }),
-        supabase.from('mood_records').select('*').eq('user_id', user.id).order('recorded_at', { ascending: false }),
-        supabase.from('hba1c_records').select('*').eq('user_id', user.id).order('tested_at', { ascending: false }),
-      ]);
-
-      if (profileRes.error) console.error('[fetchAll] Profile error:', profileRes.error);
-      if (glucoseRes.error) console.error('[fetchAll] Glucose error:', glucoseRes.error);
-      if (insulinRes.error) console.error('[fetchAll] Insulin error:', insulinRes.error);
-
-      if (profileRes.data) {
-        useRecordsStore.getState().setProfile({
-          ...profileRes.data,
-          preferred_insulins: profileRes.data.preferred_insulins || [],
-        });
-      }
-
-      useRecordsStore.setState({
-        glucoseRecords: glucoseRes.data || [],
-        insulinRecords: insulinRes.data || [],
-        mealRecords: (mealsRes.data || []).map(m => ({ ...m, items: [] })),
-        exerciseRecords: exerciseRes.data || [],
-        moodRecords: moodRes.data || [],
-        hba1cRecords: hba1cRes.data || [],
-        loading: false,
-      });
-
-      fetchedRef.current = true;
-    } catch (err) {
-      console.error('[fetchAll] Unexpected error:', err);
-      useRecordsStore.getState().setLoading(false);
+    // 진행 중인 요청이 있으면 그것을 반환 (두 번째 호출자는 같은 결과를 기다림)
+    if (inFlightRef.current) {
+      return inFlightRef.current;
     }
+
+    // 2초 쿨다운: 짧은 간격 내 반복 시도 차단 (ERR_INSUFFICIENT_RESOURCES 방지)
+    const now = Date.now();
+    if (now - lastAttemptRef.current < 2000) {
+      return;
+    }
+    lastAttemptRef.current = now;
+
+    const userId = user.id;
+    const runPromise = (async () => {
+      useRecordsStore.getState().setLoading(true);
+      try {
+        const [
+          profileRes,
+          glucoseRes,
+          insulinRes,
+          mealsRes,
+          exerciseRes,
+          moodRes,
+          hba1cRes,
+        ] = await Promise.all([
+          supabase.from('profiles').select('*').eq('id', userId).single(),
+          supabase.from('glucose_records').select('*').eq('user_id', userId).order('measured_at', { ascending: false }),
+          supabase.from('insulin_records').select('*').eq('user_id', userId).order('injected_at', { ascending: false }),
+          supabase.from('meal_records').select('*').eq('user_id', userId).order('eaten_at', { ascending: false }),
+          supabase.from('exercise_records').select('*').eq('user_id', userId).order('started_at', { ascending: false }),
+          supabase.from('mood_records').select('*').eq('user_id', userId).order('recorded_at', { ascending: false }),
+          supabase.from('hba1c_records').select('*').eq('user_id', userId).order('tested_at', { ascending: false }),
+        ]);
+
+        if (profileRes.error) console.error('[fetchAll] Profile error:', profileRes.error);
+        if (glucoseRes.error) console.error('[fetchAll] Glucose error:', glucoseRes.error);
+        if (insulinRes.error) console.error('[fetchAll] Insulin error:', insulinRes.error);
+
+        if (profileRes.data) {
+          useRecordsStore.getState().setProfile({
+            ...profileRes.data,
+            preferred_insulins: profileRes.data.preferred_insulins || [],
+          });
+        }
+
+        useRecordsStore.setState({
+          glucoseRecords: glucoseRes.data || [],
+          insulinRecords: insulinRes.data || [],
+          mealRecords: (mealsRes.data || []).map(m => ({ ...m, items: [] })),
+          exerciseRecords: exerciseRes.data || [],
+          moodRecords: moodRes.data || [],
+          hba1cRecords: hba1cRes.data || [],
+          loading: false,
+        });
+
+        fetchedUserIdRef.current = userId;
+      } catch (err) {
+        console.error('[fetchAll] Unexpected error:', err);
+        useRecordsStore.getState().setLoading(false);
+      } finally {
+        inFlightRef.current = null;
+      }
+    })();
+
+    inFlightRef.current = runPromise;
+    return runPromise;
   }, [user?.id, configured, supabase]);
 
   useEffect(() => {
-    fetchedRef.current = false;
+    // 이미 이 user.id로 성공적으로 fetch했다면 재호출 스킵 (폭주 방지의 최종 방어선)
+    if (user?.id && fetchedUserIdRef.current === user.id) {
+      return;
+    }
     fetchAll();
-  }, [fetchAll]);
+  }, [fetchAll, user?.id]);
 
   // ========== 저장 함수들 (중복 방지 적용) ==========
 
