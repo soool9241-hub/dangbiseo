@@ -39,6 +39,7 @@ export function BottomNav() {
             <li key={href} className="relative z-10">
               <Link
                 href={href}
+                prefetch={false}
                 className={cn(
                   "relative z-10 flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
                   isActive

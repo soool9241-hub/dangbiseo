@@ -39,6 +39,7 @@ export function QuickActions() {
           <Link
             key={href}
             href={href}
+            prefetch={false}
             onClick={() => setIsOpen(false)}
             className={cn(
               "flex items-center gap-2 transition-all duration-200",
