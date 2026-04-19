@@ -1,7 +1,6 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
-import { createElement } from 'react';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import type { User, SupabaseClient } from '@supabase/supabase-js';
 
@@ -51,11 +50,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, loading, signOut, supabase]
   );
 
-  return createElement(AuthContext.Provider, { value }, children);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) {
+    // 컨텍스트 없을 때도 흰화면 대신 안전한 기본값 반환
+    return {
+      user: null,
+      loading: false,
+      signOut: async () => {},
+      supabase: createClient(),
+    };
+  }
   return ctx;
 }
