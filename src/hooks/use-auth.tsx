@@ -27,13 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user ?? null);
+        const nextUser = session?.user ?? null;
+        // 같은 user id면 레퍼런스 변경 스킵 - 무한 재렌더 방지
+        setUser((prev) => (prev?.id === nextUser?.id ? prev : nextUser));
         setLoading(false);
       }
     );
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
+    supabase.auth.getUser().then(({ data: { user: nextUser } }) => {
+      setUser((prev) => (prev?.id === nextUser?.id ? prev : nextUser));
       setLoading(false);
     });
 

@@ -73,7 +73,7 @@ export function useSupabaseSync() {
       console.error('[fetchAll] Unexpected error:', err);
       useRecordsStore.getState().setLoading(false);
     }
-  }, [user, configured, supabase]);
+  }, [user?.id, configured, supabase]);
 
   useEffect(() => {
     fetchedRef.current = false;
@@ -123,7 +123,7 @@ export function useSupabaseSync() {
     } finally {
       savingRef.current.glucose = false;
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const addInsulinRecord = useCallback(async (record: { insulin_name: string; insulin_type: string; dose: number; injected_at: string; injection_site: string; note: string | null }) => {
     if (!user) throw new Error('로그인이 필요합니다');
@@ -165,7 +165,7 @@ export function useSupabaseSync() {
     } finally {
       savingRef.current.insulin = false;
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const addMealRecord = useCallback(async (record: { meal_type: string; eaten_at: string; total_carbs: number; total_calories: number | null; photo_url: string | null; note: string | null }) => {
     if (!user) throw new Error('로그인이 필요합니다');
@@ -207,7 +207,7 @@ export function useSupabaseSync() {
     } finally {
       savingRef.current.meal = false;
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const addExerciseRecord = useCallback(async (record: { exercise_type: string; duration_minutes: number; intensity: string; steps: number | null; calories_burned: number | null; started_at: string; glucose_before: number | null; glucose_after: number | null; carb_supplement: number | null; note: string | null }) => {
     if (!user) throw new Error('로그인이 필요합니다');
@@ -252,7 +252,7 @@ export function useSupabaseSync() {
     } finally {
       savingRef.current.exercise = false;
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const addMoodRecord = useCallback(async (record: { mood: string; stress_level: number; factors: string[]; note: string | null; recorded_at: string }) => {
     if (!user) throw new Error('로그인이 필요합니다');
@@ -291,7 +291,7 @@ export function useSupabaseSync() {
     } finally {
       savingRef.current.mood = false;
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const addHbA1cRecord = useCallback(async (record: { value: number; tested_at: string; lab_name: string | null; note: string | null }) => {
     if (!user) throw new Error('로그인이 필요합니다');
@@ -317,7 +317,7 @@ export function useSupabaseSync() {
     } finally {
       savingRef.current.hba1c = false;
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const updateProfile = useCallback(async (updates: Record<string, unknown>) => {
     const currentStore = useRecordsStore.getState();
@@ -344,7 +344,7 @@ export function useSupabaseSync() {
       });
       if (error) console.error('[updateProfile] Upsert error:', error);
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   const deleteRecord = useCallback(async (type: string, id: string) => {
     useRecordsStore.getState().deleteRecord(type, id);
@@ -363,7 +363,7 @@ export function useSupabaseSync() {
         if (error) console.error(`[deleteRecord] Delete error (${type}):`, error);
       }
     }
-  }, [user, supabase]);
+  }, [user?.id, supabase]);
 
   return {
     addGlucoseRecord,
