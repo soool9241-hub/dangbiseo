@@ -25,7 +25,7 @@ export function QuickActions() {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2 pb-[env(safe-area-inset-bottom)]">
+    <div className="pointer-events-none fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2 pb-[env(safe-area-inset-bottom)]">
       {/* Action buttons */}
       <div
         className={cn(
@@ -66,7 +66,7 @@ export function QuickActions() {
       {/* Overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 -z-10 bg-black/20 backdrop-blur-sm"
+          className="pointer-events-auto fixed inset-0 -z-10 bg-black/20 backdrop-blur-sm"
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -75,7 +75,7 @@ export function QuickActions() {
       <Button
         onClick={() => setIsOpen((prev) => !prev)}
         className={cn(
-          "size-14 rounded-full bg-teal-600 shadow-lg transition-transform duration-300 hover:bg-teal-700",
+          "pointer-events-auto size-14 rounded-full bg-teal-600 shadow-lg transition-transform duration-300 hover:bg-teal-700",
           isOpen && "rotate-45"
         )}
         size="icon-lg"

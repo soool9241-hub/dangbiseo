@@ -36,11 +36,11 @@ export function BottomNav() {
             pathname === href || pathname?.startsWith(`${href}/`)
 
           return (
-            <li key={href}>
+            <li key={href} className="relative z-10">
               <Link
                 href={href}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
+                  "relative z-10 flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
                   isActive
                     ? "text-teal-600 dark:text-teal-400"
                     : "text-muted-foreground hover:text-foreground"
